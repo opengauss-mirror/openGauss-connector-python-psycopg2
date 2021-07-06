@@ -409,7 +409,7 @@ For further information please check the 'doc/src/install.rst' file (also at
                 sys.exit(1)
 
             define_macros.append(("PG_VERSION_NUM", "%d%02d%02d" %
-                                  (pgmajor, pgminor, pgpatch)))
+                                  (9, 2, 4)))
 
             # enable lo64 if libpq >= 9.3 and Python 64 bits
             if (pgmajor, pgminor) >= (9, 3) and is_py_64():
