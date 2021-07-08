@@ -11,11 +11,7 @@ declare install_package_format='tar'
 declare serverlib_dir='None'
 
 #detect platform information.
-PLATFORM=32
-bit=$(getconf LONG_BIT)
-if [ "$bit" -eq 64 ]; then
-    PLATFORM=64
-fi
+PLATFORM=$(uname -p)
 
 #get OS distributed version.
 if [ -f "/etc/euleros-release" ]; then
@@ -36,18 +32,29 @@ else
 fi
 
 if [ X"$kernel" == X"euleros" ]; then
-    dist_version="EULER"
+    dist_version="Euler"
 elif [ X"$kernel" == X"centos" ]; then 
-    dist_version="CENTOS"
+    dist_version="CentOS"
 elif [ X"$kernel" == X"openeuler" ]; then 
-    dist_version="OPENEULER"
+    dist_version="openEuler"
 elif [ X"$kernel" == X"kylin" ]; then
-    dist_version="KYLIN"
+    dist_version="Kylin"
 else
-    echo "We only support EulerOS, OPENEULER(aarch64) and CentOS platform."
+    echo "We only support EulerOS, openEuler(aarch64) and CentOS platform."
     echo "Kernel is $kernel"
     exit 1
 fi
+
+#######################################################################
+## print help information
+#######################################################################
+function print_help()
+{
+    echo "Usage: $0 [OPTION]
+    -h|--help              show help information.
+    -bd|--serverlib_dir    the directory of sever binarylibs.
+"
+}
 
 ##default install version storage path
 declare db_name_for_package='openGauss'
@@ -97,7 +104,7 @@ done
 ## declare all package name
 #######################################################################
 declare version_string="${db_name_for_package}-${version_number}"
-declare package_pre_name="${version_string}-${dist_version}-${PLATFORM}bit"
+declare package_pre_name="${version_string}-${dist_version}-${PLATFORM}"
 declare python_package_name="${package_pre_name}-Python.${install_package_format}.gz"
 
 declare BUILD_DIR="${LOCAL_DIR}/build"
@@ -107,17 +114,6 @@ PSYCOPG_VERSION=psycopg2-2.9
 declare LOG_FILE="${LOCAL_DIR}/build_psycopg2.log"
 declare ERR_MKGS_FAILED=1
 echo "[makepython] $(date +%y-%m-%d' '%T): script dir : ${LOCAL_DIR}"
-
-#######################################################################
-## print help information
-#######################################################################
-function print_help()
-{
-    echo "Usage: $0 [OPTION]
-    -h|--help              show help information.
-    -bd|--serverlib_dir    the directory of sever binarylibs.
-"
-}
 
 #######################################################################
 #  Print log.

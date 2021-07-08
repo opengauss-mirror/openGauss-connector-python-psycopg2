@@ -1,19 +1,26 @@
 # openGauss-connector-python-psycopg2
 
 #### 介绍
-{**以下是 Gitee 平台说明，您可以替换此简介**
-Gitee 是 OSCHINA 推出的基于 Git 的代码托管平台（同时支持 SVN）。专为开发者提供稳定、高效、安全的云端软件开发协作平台
-无论是个人、团队、或是企业，都能够用 Gitee 实现代码托管、项目管理、协作开发。企业项目请看 [https://gitee.com/enterprises](https://gitee.com/enterprises)}
+
+该仓库为openGauss的python驱动。
 
 #### 软件架构
-软件架构说明
 
 
-#### 安装教程
+#### 打包步骤
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+1. 推荐使用python3，请在服务器上装python3和python3-devel
+```
+yum install python3 python3-devel
+```
+
+2. python驱动的打包需要依赖openGauss-server编译的libpq，请参照 [openGauss使用命令编译代码](https://gitee.com/opengauss/openGauss-server#%E4%BD%BF%E7%94%A8%E5%91%BD%E4%BB%A4%E7%BC%96%E8%AF%91%E4%BB%A3%E7%A0%81) 
+
+3. 下载`openGauss-connector-python-psycopg2`仓库代码，进入到根目录下，执行
+```
+sh build.sh -bd /data/compile/openGauss-server/dest/   # dest为编译openGauss-server编译结果目录
+```
+编译完成后的驱动，在 `output` 目录下。
 
 #### 使用说明
 
