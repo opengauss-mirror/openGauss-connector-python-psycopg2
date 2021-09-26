@@ -58,7 +58,7 @@ function print_help()
 
 ##default install version storage path
 declare db_name_for_package='openGauss'
-declare version_number='2.0.0'
+declare version_number='2.1.0'
 
 if [ $# = 0 ] ; then 
     echo "missing option"
