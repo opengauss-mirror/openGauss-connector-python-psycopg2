@@ -27,15 +27,15 @@ sh build.sh -bd /data/compile/openGauss-server/dest/   # dest为编译openGauss-
 社区每日构建，提供三套环境已经编译好的驱动包供使用，下载路径如下：
 
 openEuler-aarch64：\
-https://opengauss.obs.cn-south-1.myhuaweicloud.com/latest/arm/openGauss-2.0.0-openEuler-aarch64-Python.tar.gz
+https://opengauss.obs.cn-south-1.myhuaweicloud.com/latest/arm/openGauss-3.0.0-openEuler-aarch64-Python.tar.gz
 
 
 CentOS-x86_64: \
-https://opengauss.obs.cn-south-1.myhuaweicloud.com/latest/x86/openGauss-2.0.0-CentOS-x86_64-Python.tar.gz
+https://opengauss.obs.cn-south-1.myhuaweicloud.com/latest/x86/openGauss-3.0.0-CentOS-x86_64-Python.tar.gz
 
 
 openEuler-x86_64: \
-https://opengauss.obs.cn-south-1.myhuaweicloud.com/latest/x86_openEuler/openGauss-2.0.0-openEuler-x86_64-Python.tar.gz
+https://opengauss.obs.cn-south-1.myhuaweicloud.com/latest/x86_openEuler/openGauss-3.0.0-openEuler-x86_64-Python.tar.gz
 
 
 #### 使用说明
