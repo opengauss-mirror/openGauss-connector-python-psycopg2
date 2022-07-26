@@ -1,6 +1,6 @@
 static long int typecast_NUMBER_types[] = {20, 23, 21, 701, 700, 1700, 0};
 static long int typecast_LONGINTEGER_types[] = {20, 0};
-static long int typecast_INTEGER_types[] = {23, 21, 0};
+static long int typecast_INTEGER_types[] = {5545, 23, 21, 0};
 static long int typecast_FLOAT_types[] = {701, 700, 0};
 static long int typecast_DECIMAL_types[] = {1700, 0};
 static long int typecast_STRING_types[] = {19, 18, 25, 1042, 1043, 0};
