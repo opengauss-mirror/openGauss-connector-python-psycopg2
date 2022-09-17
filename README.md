@@ -18,24 +18,30 @@ yum install python3 python3-devel
 
 3. 下载`openGauss-connector-python-psycopg2`仓库代码，进入到根目录下，执行
 ```
-sh build.sh -bd /data/compile/openGauss-server/dest/   # dest为编译openGauss-server编译结果目录
+sh build.sh -bd /data/compile/openGauss-server/dest/ -v 3.0.0
 ```
+**说明** \
+-bd: 指定openGauss数据库构建结果目录 \
+-v: 指定构建包的版本号。不指定则默认为3.0.0
+
 编译完成后的驱动，在 `output` 目录下。
 
 #### 软件下载
 
 社区每日构建，提供三套环境已经编译好的驱动包供使用，下载路径如下：
 
+其中 **VERSION** 为当前最新的版本号。
+
 openEuler-aarch64：\
-https://opengauss.obs.cn-south-1.myhuaweicloud.com/latest/arm/openGauss-3.0.0-openEuler-aarch64-Python.tar.gz
+https://opengauss.obs.cn-south-1.myhuaweicloud.com/latest/arm/openGauss-**VERSION**-openEuler-aarch64-Python.tar.gz
 
 
 CentOS-x86_64: \
-https://opengauss.obs.cn-south-1.myhuaweicloud.com/latest/x86/openGauss-3.0.0-CentOS-x86_64-Python.tar.gz
+https://opengauss.obs.cn-south-1.myhuaweicloud.com/latest/x86/openGauss-**VERSION**-CentOS-x86_64-Python.tar.gz
 
 
 openEuler-x86_64: \
-https://opengauss.obs.cn-south-1.myhuaweicloud.com/latest/x86_openEuler/openGauss-3.0.0-openEuler-x86_64-Python.tar.gz
+https://opengauss.obs.cn-south-1.myhuaweicloud.com/latest/x86_openEuler/openGauss-**VERSION**-openEuler-x86_64-Python.tar.gz
 
 
 #### 使用说明

@@ -57,6 +57,7 @@ function print_help()
     echo "Usage: $0 [OPTION]
     -h|--help              show help information.
     -bd|--serverlib_dir    the directory of sever binarylibs.
+    -v|--version           package version number.
 "
 }
 
@@ -94,6 +95,15 @@ while [ $# -gt 0 ]; do
                 exit 1
             fi
             serverlib_dir=$2
+            shift 2
+            ;;
+        -v|--version)
+            if [ "$2" != "" ]; then
+                echo "Package openGauss python driver version is : $2"
+                version_number=$2
+            else
+                echo "No version number was specified. Use the default $version_number"
+            fi
             shift 2
             ;;
          *)
