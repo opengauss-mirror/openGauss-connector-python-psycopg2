@@ -18,11 +18,11 @@ yum install python3 python3-devel
 
 3. 下载`openGauss-connector-python-psycopg2`仓库代码，进入到根目录下，执行
 ```
-sh build.sh -bd /data/compile/openGauss-server/dest/ -v 3.0.0
+sh build.sh -bd /data/compile/openGauss-server/dest/ -v 5.0.0
 ```
 **说明** \
 -bd: 指定openGauss数据库构建结果目录 \
--v: 指定构建包的版本号。不指定则默认为3.0.0
+-v: 指定构建包的版本号。不指定则默认为5.0.0
 
 编译完成后的驱动，在 `output` 目录下。
 
