@@ -1302,3 +1302,37 @@ def _split_sql(sql):
         raise ValueError("the query doesn't contain any '%s' placeholder")
 
     return pre, post
+
+
+def execute_prepared_batch(cur, prepared_statement_name, args_list, page_size=100):
+    r"""
+    [openGauss libpq only]
+
+    Execute prepared statement with api `PQexecPreparedBatch` (new api in openGauss)
+
+    Param:
+        argslist: 2d list, do nothing if empty
+    """
+    if len(args_list) == 0:
+        return
+
+    nparams = len(args_list[0])
+    for page in _paginate(args_list, page_size=page_size):
+            cur.execute_prepared_batch(prepared_statement_name, nparams, len(page), page)
+
+
+def execute_params_batch(cur, sql_format, args_list, page_size=100):
+    r"""
+    [openGauss libpq only]
+
+    Execute sql with api `PQexecParamsBatch` (new api in openGauss)
+
+    Arguments:
+    argslist: 2d list, do nothing if empty
+    """
+    if len(args_list) == 0:
+        return
+
+    nparams = len(args_list[0])
+    for page in _paginate(args_list, page_size=page_size):
+        cur.execute_params_batch(sql_format, nparams, len(page), page)
