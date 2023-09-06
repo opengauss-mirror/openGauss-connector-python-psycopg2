@@ -281,7 +281,7 @@ _mogrify(PyObject *var, PyObject *fmt, cursorObject *curs, PyObject **new, char 
             }
         }
 
-        else if (*c == '$') {       //new place holder $
+        else if (*c == '$') {       // new place holder $
             int tmp_index = 0;
             if ((kind == 1) || (kind == 2)) {
                 Py_XDECREF(n);
@@ -289,17 +289,17 @@ _mogrify(PyObject *var, PyObject *fmt, cursorObject *curs, PyObject **new, char 
                 "argument formats can't be mixed");
                 return -1;
             }
-            kind = 3;               //kind = 3 means using 
+            kind = 3;               // kind = 3 means using 
 
             ++c;
-            while (isdigit(*c)) {   //calculate index
+            while (isdigit(*c)) {   // calculate index
                 tmp_index = tmp_index * 10 + (*c) -'0';
                 ++c;
             }
             --tmp_index;
 
             for (; max_index <= tmp_index; ++max_index) {
-                //to avoid index not cover all arguments, which may cause double free in bytes_format
+                // to avoid index not cover all arguments, which may cause double free in bytes_format
                 int id = max_index;
                 value = PySequence_GetItem(var, id);
                 if (value == NULL) {
