@@ -628,7 +628,7 @@ curs_execute_prepared_batch(cursorObject *self, PyObject *args)
     int nParams = 0, nBatch = 0;
     PyObject *argsList = NULL;
 
-    Py_ssize_t rowIdx, colIdx, total;
+    int rowIdx, colIdx, total;
     char **paramValues = NULL;
     PGresult *res = NULL;
 
@@ -642,7 +642,7 @@ curs_execute_prepared_batch(cursorObject *self, PyObject *args)
     }
     Dprintf("execute_prepared_batch parsed statement_name: %s, nParams: %d, nBatch: %d",
             stmtName, nParams, nBatch);
-    total = nBatch*nParams;
+    total = nBatch * nParams;
 
     EXC_IF_CURS_CLOSED(self);
     EXC_IF_CURS_ASYNC(self, execute_prepared_batch);
@@ -679,11 +679,12 @@ curs_execute_prepared_batch(cursorObject *self, PyObject *args)
             PyObject *argItem = PySequence_GetItem(rowArgs, colIdx);
 
             if (argItem == Py_None) {
-                paramValues[rowIdx*nParams+colIdx] = "NULL";
+                paramValues[rowIdx * nParams + colIdx] = NULL;
             } else {
-                PyObject *t = microprotocol_getquoted(argItem, self->conn);
-                paramValues[rowIdx*nParams+colIdx] = strdup(Bytes_AsString(t));
-                Py_XDECREF(t);
+                if (!(argItem = psyco_ensure_bytes(argItem))) {
+                    goto exit;
+                }
+                paramValues[rowIdx * nParams + colIdx] = Bytes_AsString(argItem);
             }
             Py_XDECREF(argItem);
         }
@@ -715,7 +716,7 @@ curs_execute_params_batch(cursorObject *self, PyObject *args)
     int nParams = 0, nBatch = 0;
     PyObject *argsList = NULL;
 
-    Py_ssize_t rowIdx, colIdx, total;
+    int rowIdx, colIdx, total;
     char **paramValues = NULL;
     PGresult *res = NULL;
 
@@ -729,7 +730,7 @@ curs_execute_params_batch(cursorObject *self, PyObject *args)
     Dprintf("execute_params_batch parsed sql: %s, nParams: %d, nBatch: %d",
             sql, nParams, nBatch);
 
-    total = nBatch*nParams;
+    total = nBatch * nParams;
 
     EXC_IF_CURS_CLOSED(self);
     EXC_IF_CURS_ASYNC(self, execute_params_batch);
@@ -765,11 +766,12 @@ curs_execute_params_batch(cursorObject *self, PyObject *args)
             PyObject *argItem = PySequence_GetItem(rowArgs, colIdx);
 
             if (argItem == Py_None) {
-                paramValues[rowIdx*nParams+colIdx] = "NULL";
+                paramValues[rowIdx * nParams + colIdx] = NULL;
             } else {
-                PyObject *t = microprotocol_getquoted(argItem, self->conn);
-                paramValues[rowIdx*nParams+colIdx] = strdup(Bytes_AsString(t));
-                Py_XDECREF(t);
+                if (!(argItem = psyco_ensure_bytes(argItem))) {
+                    goto exit;
+                }
+                paramValues[rowIdx * nParams + colIdx] = Bytes_AsString(argItem);
             }
             Py_XDECREF(argItem);
         }

@@ -1142,7 +1142,7 @@ def register_composite(name, conn_or_curs, globally=False, factory=None):
     return caster
 
 
-def _paginate(seq, page_size):
+def _paginate(seq, page_size, to_byte=False):
     """Consume an iterable and return it in chunks.
 
     Every chunk is at most `page_size`. Never return an empty chunk.
@@ -1152,7 +1152,16 @@ def _paginate(seq, page_size):
     while True:
         try:
             for i in range(page_size):
-                page.append(next(it))
+                if not to_byte:
+                    page.append(next(it))
+                    continue
+                vs = next(it)
+                if isinstance(vs, (list, tuple)):
+                    # Ignore None object
+                    # Serialized params to bytes
+                    page.append(list(map(lambda v: v if v is None else str(v).encode('utf-8'), vs)))
+                else:
+                    page.append(vs)
             yield page
             page = []
         except StopIteration:
@@ -1308,16 +1317,17 @@ def execute_prepared_batch(cur, prepared_statement_name, args_list, page_size=10
     r"""
     [openGauss libpq only]
 
-    Execute prepared statement with api `PQexecPreparedBatch` (new api in openGauss)
+    Execute prepared statement with api `PQexecPreparedBatch` (new api in openGauss's libpq.so)
 
-    Param:
-        argslist: 2d list, do nothing if empty
+    Arguments:
+        argslist: Two-dimensional list, if empty, return directly
+        Each parameter in the argument list must be a string or be string-able(should implements `__str__` magic method)
     """
     if len(args_list) == 0:
         return
 
     nparams = len(args_list[0])
-    for page in _paginate(args_list, page_size=page_size):
+    for page in _paginate(args_list, page_size=page_size, to_byte=True):
             cur.execute_prepared_batch(prepared_statement_name, nparams, len(page), page)
 
 
@@ -1325,14 +1335,15 @@ def execute_params_batch(cur, sql_format, args_list, page_size=100):
     r"""
     [openGauss libpq only]
 
-    Execute sql with api `PQexecParamsBatch` (new api in openGauss)
+    Execute sql with api `PQexecParamsBatch` (new api in openGauss's libpq.so)
 
     Arguments:
-    argslist: 2d list, do nothing if empty
+        argslist: Two-dimensional list, if empty, return directly
+        Each parameter in the argument list must be a string or be string-able(should implements `__str__` magic method)
     """
     if len(args_list) == 0:
         return
 
     nparams = len(args_list[0])
-    for page in _paginate(args_list, page_size=page_size):
+    for page in _paginate(args_list, page_size=page_size, to_byte=True):
         cur.execute_params_batch(sql_format, nparams, len(page), page)
