@@ -46,6 +46,13 @@ extern "C" {
 #define STATE_ON                1
 #define STATE_DEFAULT           2
 
+/* sql_compatibility values */
+#define SQL_COMPATIBILITY_A         1
+#define SQL_COMPATIBILITY_OTHER     5
+// #define SQL_COMPATIBILITY_B     2
+// #define SQL_COMPATIBILITY_C     3
+// #define SQL_COMPATIBILITY_PG    4
+
 /* connection status */
 #define CONN_STATUS_SETUP       0
 #define CONN_STATUS_READY       1
@@ -148,6 +155,8 @@ struct connectionObject {
 
     /* inside a with block */
     int entered;
+
+    int sql_compatibility;
 };
 
 /* map isolation level values into a numeric const */

@@ -1268,6 +1268,9 @@ static struct PyMemberDef connectionObject_members[] = {
     {"server_version", T_INT,
         offsetof(connectionObject, server_version), READONLY,
         "Server version."},
+    {"sql_compatibility", T_INT,
+        offsetof(connectionObject, sql_compatibility), READONLY,
+        "Server sql_compatibility param value."},
     {NULL}
 };
 
@@ -1317,6 +1320,7 @@ static int
 connection_setup(connectionObject *self, const char *dsn, long int async)
 {
     int rv = -1;
+    char *sql_compatibility_value = NULL;
 
     Dprintf("connection_setup: init connection object at %p, "
 	    "async %ld, refcnt = " FORMAT_CODE_PY_SSIZE_T,
@@ -1334,6 +1338,7 @@ connection_setup(connectionObject *self, const char *dsn, long int async)
     self->isolevel = ISOLATION_LEVEL_DEFAULT;
     self->readonly = STATE_DEFAULT;
     self->deferrable = STATE_DEFAULT;
+    self->sql_compatibility = SQL_COMPATIBILITY_A;
 #ifdef CONN_CHECK_PID
     self->procpid = getpid();
 #endif
@@ -1356,7 +1361,22 @@ connection_setup(connectionObject *self, const char *dsn, long int async)
         FORMAT_CODE_PY_SSIZE_T,
         self, Py_REFCNT(self));
 
+    Py_BEGIN_ALLOW_THREADS;
+    pthread_mutex_lock(&self->lock);
+    sql_compatibility_value = pq_get_guc_locked(self, "sql_compatibility", &_save);
+    pthread_mutex_unlock(&self->lock);
+    Py_END_ALLOW_THREADS;
+
+    if (strcmp(sql_compatibility_value, "A") == 0) {
+        self->sql_compatibility = SQL_COMPATIBILITY_A;
+    } else {
+        self->sql_compatibility = SQL_COMPATIBILITY_OTHER;
+    }
+
 exit:
+    if (sql_compatibility_value){
+        free(sql_compatibility_value);
+    }
     return rv;
 }
 
