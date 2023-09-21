@@ -238,8 +238,8 @@ PyObject *Bytes_Format(PyObject *format, PyObject *args, char place_holder) {
     }
 
     args_list = (char **)malloc(sizeof(char *) * arglen);                           // buffer
-    memset(args_list, NULL, sizeof(char *) * arglen);
-    args_len = (Py_ssize_t *)malloc(sizeof(Py_ssize_t *) * arglen);                 // length of every argument
+    memset(args_list, 0, sizeof(char *) * arglen);
+    args_len = (Py_ssize_t *)malloc(sizeof(Py_ssize_t) * arglen);                   // length of every argument
     while ((args_value = getnextarg(args, arglen, &argidx)) != NULL) {              // stop when receive NULL
         Py_ssize_t length = 0;
         if (!Bytes_CheckExact(args_value)) {
@@ -251,14 +251,14 @@ PyObject *Bytes_Format(PyObject *format, PyObject *args, char place_holder) {
         length = Bytes_GET_SIZE(args_value);
         // printf("type: %s, len: %d, value: %s\n", Py_TYPE(args_value)->tp_name, length, args_buffer);
         args_len[argidx - 1] = length;
-        args_list[argidx - 1] = (char *)malloc(sizeof(char *) * (length + 1));
+        args_list[argidx - 1] = (char *)malloc(sizeof(char) * (length + 1));
         Py_MEMCPY(args_list[argidx - 1], args_buffer, length);
         args_list[argidx - 1][length] = '\0';
         Py_XDECREF(args_value);
     }
     
     arg_usecnt = (int *)malloc(sizeof(int) * arglen);
-    memset(arg_usecnt, 0, sizeof(char *) * arglen);
+    memset(arg_usecnt, 0, sizeof(int) * arglen);
 
     fmt = Bytes_AS_STRING(format);      // get pointer of format
     fmtcnt = Bytes_GET_SIZE(format);    // get length of format
