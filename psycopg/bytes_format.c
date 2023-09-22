@@ -227,7 +227,7 @@ PyObject *Bytes_Format(PyObject *format, PyObject *args, char place_holder) {
         } /* '%' */
     } /* until end */
     
-    if (dict) {                                             // if args' type is dict, the func ends
+    if (dict || (arglen < 0) || (argidx < 0)) {                                     // args' type is dict, the func ends
         if (args_owned) Py_DECREF(args);
         if (!(result = resize_bytes(result, reslen - rescnt))) return NULL;         // resize and return
         if (place_holder != '%') {
