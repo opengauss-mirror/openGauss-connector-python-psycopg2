@@ -684,7 +684,12 @@ curs_execute_prepared_batch(cursorObject *self, PyObject *args)
                 if (!(argItem = psyco_ensure_bytes(argItem))) {
                     goto exit;
                 }
-                paramValues[rowIdx * nParams + colIdx] = Bytes_AsString(argItem);
+                // convert empty string to NULL in A compatibility mode
+                if (self->conn->sql_compatibility == SQL_COMPATIBILITY_A && PyObject_Length(argItem) == 0) {
+                    paramValues[rowIdx * nParams + colIdx] = NULL;
+                } else {
+                    paramValues[rowIdx * nParams + colIdx] = Bytes_AsString(argItem);
+                }
             }
             Py_XDECREF(argItem);
         }
@@ -771,7 +776,12 @@ curs_execute_params_batch(cursorObject *self, PyObject *args)
                 if (!(argItem = psyco_ensure_bytes(argItem))) {
                     goto exit;
                 }
-                paramValues[rowIdx * nParams + colIdx] = Bytes_AsString(argItem);
+                // convert empty string to NULL in A compatibility mode
+                if (self->conn->sql_compatibility == SQL_COMPATIBILITY_A && PyObject_Length(argItem) == 0) {
+                    paramValues[rowIdx * nParams + colIdx] = NULL;
+                } else {
+                    paramValues[rowIdx * nParams + colIdx] = Bytes_AsString(argItem);
+                }
             }
             Py_XDECREF(argItem);
         }
