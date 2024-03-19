@@ -43,7 +43,7 @@
 #include "psycopg/pgtypes.h"
 #include "psycopg/error.h"
 #include "psycopg/column.h"
-
+#include <stdlib.h>
 #include "psycopg/libpq_support.h"
 #include "libpq-fe.h"
 
@@ -601,6 +601,51 @@ pq_get_guc_locked(connectionObject *conn, const char *param, PyThreadState **tst
     }
 
     rv = strdup(PQgetvalue(conn->pgres, 0, 0));
+    CLEARPGRES(conn->pgres);
+
+cleanup:
+    return rv;
+}
+
+
+
+unsigned int
+pq_get_custom_type_oid(connectionObject *conn, const char *param, PyThreadState **tstate)
+{
+    char query[256];
+    int size;
+    unsigned int rv = 0;
+
+    size = PyOS_snprintf(query, sizeof(query), "select oid from pg_type where typname= %s", param);
+    if (size < 0 || (size_t)size >= sizeof(query)) {
+        conn_set_error(conn, "query too large");
+        goto cleanup;
+    }
+
+    if (!psyco_green()) {
+        conn_set_result(conn, PQexec(conn->pgconn, query));
+    } else {
+        PyEval_RestoreThread(*tstate);
+        conn_set_result(conn, psyco_exec_green(conn, query));
+        *tstate = PyEval_SaveThread();
+    }
+
+    if (!conn->pgres) {
+        Dprintf("pq_get_custom_type_oid: PQexec returned NULL");
+        PyEval_RestoreThread(*tstate);
+        if (!PyErr_Occurred()) {
+            conn_set_error(conn, PQerrorMessage(conn->pgconn));
+        }
+        *tstate = PyEval_SaveThread();
+        goto cleanup;
+    }
+    if (PQresultStatus(conn->pgres) != PGRES_TUPLES_OK) {
+        Dprintf("pq_get_custom_type_oid: result was not TUPLES_OK (%s)",
+                PQresStatus(PQresultStatus(conn->pgres)));
+        goto cleanup;
+    }
+
+    rv = atoi(strdup(PQgetvalue(conn->pgres, 0, 0)));
     CLEARPGRES(conn->pgres);
 
 cleanup:

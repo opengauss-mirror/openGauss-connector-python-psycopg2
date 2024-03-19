@@ -459,7 +459,7 @@ PyTypeObject typecastType = {
     0,          /*tp_new*/
 };
 
-static PyObject *
+PyObject *
 typecast_new(PyObject *name, PyObject *values, PyObject *cast, PyObject *base)
 {
     typecastObject *obj;

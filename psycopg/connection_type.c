@@ -37,6 +37,8 @@
 
 #include <string.h>
 #include <ctype.h>
+#include "psycopg/typecast.h"
+#include "psycopg/typecast_basic.c"
 
 extern HIDDEN const char *srv_isolevels[];
 extern HIDDEN const char *srv_readonly[];
@@ -1314,6 +1316,54 @@ static struct PyGetSetDef connectionObject_getsets[] = {
 };
 #undef EXCEPTION_GETTER
 
+
+/* register the uint typecasters */
+static int
+register_type_uint(connectionObject *self, PyThreadState **tstate)
+{
+    int rv = -1;
+    typecastObject *obj = NULL;
+    PyObject *name = NULL, *values = NULL;
+    Py_ssize_t i, len = 0;
+
+    char* uint_arr[] = {"\'uint1\'", "\'uint2\'", "\'uint4\'", "\'uint8\'"};
+    int size = sizeof(uint_arr) / sizeof(uint_arr[0]);
+    long int* _typecast_INTEGER_types;
+    _typecast_INTEGER_types = (long int*)malloc((size+1)*sizeof(long int));
+
+    for (int i=0; i< size; i++) {
+        unsigned int uint_val = pq_get_custom_type_oid(self, uint_arr[i], tstate);
+        _typecast_INTEGER_types[i] = (long int)uint_val;
+    }
+    typecastObject_initlist _typecast_builtins[] = {
+        {"INTEGER", _typecast_INTEGER_types, typecast_INTEGER_cast, NULL},
+    };
+    name = Text_FromUTF8(_typecast_builtins->name);
+    if (!name) goto end;
+
+    while (_typecast_builtins->values[len] != 0) len++;
+
+    values = PyTuple_New(len);
+    if (!values) goto end;
+
+    for (i = 0; i < len ; i++) {
+        PyTuple_SET_ITEM(values, i, PyInt_FromLong(_typecast_builtins->values[i]));
+    }
+    obj = (typecastObject *)typecast_new(name, values, NULL, NULL);
+    if (obj) {
+        obj->ccast = _typecast_builtins->cast;
+        obj->pcast = NULL;
+    }
+    if (typecast_add((PyObject *)obj, self->string_types, 0) < 0) { goto end; }
+    rv = 0;
+    free(_typecast_INTEGER_types);
+end:
+    Py_XDECREF(values);
+    Py_XDECREF(name);
+    return rv;
+}
+
+
 /* initialization and finalization methods */
 
 static int
@@ -1364,6 +1414,7 @@ connection_setup(connectionObject *self, const char *dsn, long int async)
     Py_BEGIN_ALLOW_THREADS;
     pthread_mutex_lock(&self->lock);
     sql_compatibility_value = pq_get_guc_locked(self, "sql_compatibility", &_save);
+    if (register_type_uint(self, &_save)) { goto exit; }
     pthread_mutex_unlock(&self->lock);
     Py_END_ALLOW_THREADS;
 
