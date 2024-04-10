@@ -608,15 +608,16 @@ cleanup:
 }
 
 
+/* Get the oid of uint type created by the dolphin plugin, which is only in the pg_catalog by default */
 
 unsigned int
-pq_get_custom_type_oid(connectionObject *conn, const char *param, PyThreadState **tstate)
+pq_get_pg_catalog_custom_type_oid(connectionObject *conn, const char *param, PyThreadState **tstate)
 {
     char query[256];
     int size;
     unsigned int rv = 0;
 
-    size = PyOS_snprintf(query, sizeof(query), "select oid from pg_type where typname= %s", param);
+    size = PyOS_snprintf(query, sizeof(query), "select oid from pg_type where typnamespace = 11 and typname= %s", param);
     if (size < 0 || (size_t)size >= sizeof(query)) {
         conn_set_error(conn, "query too large");
         goto cleanup;
@@ -631,7 +632,7 @@ pq_get_custom_type_oid(connectionObject *conn, const char *param, PyThreadState 
     }
 
     if (!conn->pgres) {
-        Dprintf("pq_get_custom_type_oid: PQexec returned NULL");
+        Dprintf("pq_get_pg_catalog_custom_type_oid: PQexec returned NULL");
         PyEval_RestoreThread(*tstate);
         if (!PyErr_Occurred()) {
             conn_set_error(conn, PQerrorMessage(conn->pgconn));
@@ -640,7 +641,7 @@ pq_get_custom_type_oid(connectionObject *conn, const char *param, PyThreadState 
         goto cleanup;
     }
     if (PQresultStatus(conn->pgres) != PGRES_TUPLES_OK) {
-        Dprintf("pq_get_custom_type_oid: result was not TUPLES_OK (%s)",
+        Dprintf("pq_get_pg_catalog_custom_type_oid: result was not TUPLES_OK (%s)",
                 PQresStatus(PQresultStatus(conn->pgres)));
         goto cleanup;
     }

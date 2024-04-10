@@ -1332,7 +1332,7 @@ register_type_uint(connectionObject *self, PyThreadState **tstate)
     _typecast_INTEGER_types = (long int*)malloc((size+1)*sizeof(long int));
 
     for (int i=0; i< size; i++) {
-        unsigned int uint_val = pq_get_custom_type_oid(self, uint_arr[i], tstate);
+        unsigned int uint_val = pq_get_pg_catalog_custom_type_oid(self, uint_arr[i], tstate);
         _typecast_INTEGER_types[i] = (long int)uint_val;
     }
     typecastObject_initlist _typecast_builtins[] = {
