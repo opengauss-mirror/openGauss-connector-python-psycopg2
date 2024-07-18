@@ -616,7 +616,7 @@ pq_get_pg_catalog_custom_type_oid(connectionObject *conn, const char *param, PyT
     char query[256];
     int size;
     unsigned int rv = 0;
-
+    char *temp_oid = NULL;
     size = PyOS_snprintf(query, sizeof(query), "select oid from pg_type where typnamespace = 11 and typname= %s", param);
     if (size < 0 || (size_t)size >= sizeof(query)) {
         conn_set_error(conn, "query too large");
@@ -645,8 +645,11 @@ pq_get_pg_catalog_custom_type_oid(connectionObject *conn, const char *param, PyT
                 PQresStatus(PQresultStatus(conn->pgres)));
         goto cleanup;
     }
-
-    rv = atoi(strdup(PQgetvalue(conn->pgres, 0, 0)));
+    temp_oid = PQgetvalue(conn->pgres, 0, 0);
+    if(temp_oid)
+    {
+        rv = (unsigned int)atoi(temp_oid);
+    }
     CLEARPGRES(conn->pgres);
 
 cleanup:
