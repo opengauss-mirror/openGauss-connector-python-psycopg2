@@ -48,6 +48,7 @@ else
     echo "Kernel is $kernel"
     exit 1
 fi
+os_version=$(cat /etc/os-release | grep -w VERSION_ID | awk -F '"' '{print $2}')
 
 #######################################################################
 ## print help information
@@ -62,8 +63,8 @@ function print_help()
 }
 
 ##default install version storage path
-declare db_name_for_package='openGauss'
-declare version_number='5.0.0'
+declare db_name_for_package='openGauss-Python'
+declare version_number='6.0.0'
 
 if [ $# = 0 ] ; then 
     echo "missing option"
@@ -118,8 +119,8 @@ done
 ## declare all package name
 #######################################################################
 declare version_string="${db_name_for_package}-${version_number}"
-declare package_pre_name="${version_string}-${dist_version}-${PLATFORM}"
-declare python_package_name="${package_pre_name}-Python.${install_package_format}.gz"
+declare package_pre_name="${version_string}-${dist_version}${os_version}-${PLATFORM}"
+declare python_package_name="${package_pre_name}.${install_package_format}.gz"
 
 declare BUILD_DIR="${LOCAL_DIR}/build"
 declare MKGS_OK=0
