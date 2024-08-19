@@ -203,6 +203,11 @@ _parse_noninftz(const char *str, Py_ssize_t len, PyObject *curs)
     rv = PyObject_CallFunction(
         (PyObject*)PyDateTimeAPI->DateTimeType, "iiiiiiiO",
         y, m, d, hh, mm, ss, us, tzinfo);
+    if (rv == NULL) {
+        /* illegal values are returned as str */
+        PyErr_Clear();
+        rv = PyUnicode_FromString(str);
+    }
 
 exit:
     Py_XDECREF(tzoff);
