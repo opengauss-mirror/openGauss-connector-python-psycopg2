@@ -88,5 +88,7 @@ HIDDEN PyObject *typecast_array_from_python(
 HIDDEN PyObject *typecast_cast(
     PyObject *self, const char *str, Py_ssize_t len, PyObject *curs);
 
+HIDDEN long convert_time_oid_to_interval_oid(long value);
+
 #endif /* !defined(PSYCOPG_TYPECAST_H) */
 PyObject *typecast_new(PyObject *name, PyObject *values, PyObject *cast, PyObject *base);

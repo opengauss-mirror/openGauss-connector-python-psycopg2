@@ -49,7 +49,7 @@ extern "C" {
 /* sql_compatibility values */
 #define SQL_COMPATIBILITY_A         1
 #define SQL_COMPATIBILITY_OTHER     5
-// #define SQL_COMPATIBILITY_B     2
+#define SQL_COMPATIBILITY_B         2
 // #define SQL_COMPATIBILITY_C     3
 // #define SQL_COMPATIBILITY_PG    4
 

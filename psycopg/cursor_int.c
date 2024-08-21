@@ -57,6 +57,16 @@ curs_get_cast(cursorObject *self, PyObject *oid)
     if (cast) { return cast; }
 
     /* global lookup */
+    if (self->conn->sql_compatibility == SQL_COMPATIBILITY_B) {
+        /*
+        In mysql compatibility mode, we should convert the TIME column to a python datetime.timedelta type,
+        just like the behavior of PyMySQL and mysql-connector-python.
+        */
+        if (PyLong_Check(oid)) {
+            long value = convert_time_oid_to_interval_oid(PyLong_AsLong(oid));
+            oid = PyLong_FromLong(value);
+        }
+    }
     cast = PyDict_GetItem(psyco_types, oid);
     Dprintf("curs_get_cast:        global dict: %p", cast);
     if (cast) { return cast; }
