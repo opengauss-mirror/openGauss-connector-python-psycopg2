@@ -1364,6 +1364,24 @@ end:
 }
 
 
+static int set_sql_compatibility(connectionObject *self, char *value)
+{
+    switch (value[0]) {
+        case 'A':
+        case 'a':
+            self->sql_compatibility = SQL_COMPATIBILITY_A;
+            break;
+        case 'B':
+        case 'b':
+            self->sql_compatibility = SQL_COMPATIBILITY_B;
+            break;
+        default:
+            self->sql_compatibility = SQL_COMPATIBILITY_OTHER;
+            break;
+    }
+    return 0;
+}
+
 /* initialization and finalization methods */
 
 static int
@@ -1414,15 +1432,10 @@ connection_setup(connectionObject *self, const char *dsn, long int async)
     Py_BEGIN_ALLOW_THREADS;
     pthread_mutex_lock(&self->lock);
     sql_compatibility_value = pq_get_guc_locked(self, "sql_compatibility", &_save);
+    set_sql_compatibility(self, sql_compatibility_value);
     if (register_type_uint(self, &_save)) { goto exit; }
     pthread_mutex_unlock(&self->lock);
     Py_END_ALLOW_THREADS;
-
-    if (strcmp(sql_compatibility_value, "A") == 0) {
-        self->sql_compatibility = SQL_COMPATIBILITY_A;
-    } else {
-        self->sql_compatibility = SQL_COMPATIBILITY_OTHER;
-    }
 
 exit:
     if (sql_compatibility_value){

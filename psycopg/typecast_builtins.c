@@ -31,6 +31,21 @@ static long int typecast_MACADDRARRAY_types[] = {1040, 0};
 static long int typecast_UNKNOWN_types[] = {705, 0};
 
 
+long convert_time_oid_to_interval_oid(long value)
+{
+    int i = 0;
+    while (typecast_TIME_types[i] != 0) {
+        if (typecast_TIME_types[i] == value) {
+            Dprintf("convert time oid to interval oid");
+            value = typecast_INTERVAL_types[0];
+            break;
+        }
+        i++;
+    }
+    return value;
+}
+
+
 static typecastObject_initlist typecast_builtins[] = {
   {"NUMBER", typecast_NUMBER_types, typecast_NUMBER_cast, NULL},
   {"LONGINTEGER", typecast_LONGINTEGER_types, typecast_LONGINTEGER_cast, NULL},
