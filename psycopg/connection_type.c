@@ -1357,8 +1357,8 @@ register_type_uint(connectionObject *self, PyThreadState **tstate)
     }
     if (typecast_add((PyObject *)obj, self->string_types, 0) < 0) { goto end; }
     rv = 0;
-    free(_typecast_INTEGER_types);
 end:
+    free(_typecast_INTEGER_types);
     Py_XDECREF(values);
     Py_XDECREF(name);
     return rv;
@@ -1429,14 +1429,25 @@ connection_setup(connectionObject *self, const char *dsn, long int async)
     Dprintf("connection_setup: good connection object at %p, refcnt = "
         FORMAT_CODE_PY_SSIZE_T,
         self, Py_REFCNT(self));
+    PyThreadState *tstate = (PyThreadState *)malloc(sizeof(PyThreadState));
 
     Py_BEGIN_ALLOW_THREADS;
     pthread_mutex_lock(&self->lock);
     sql_compatibility_value = pq_get_guc_locked(self, "sql_compatibility", &_save);
     set_sql_compatibility(self, sql_compatibility_value);
-    if (register_type_uint(self, &_save)) { goto exit; }
+    memcpy(tstate, _save, sizeof(_save));
     pthread_mutex_unlock(&self->lock);
     Py_END_ALLOW_THREADS;
+    
+    pthread_mutex_lock(&self->lock);
+    if (register_type_uint(self, &tstate)) {
+        goto exit;
+    }
+    if (tstate) {
+        free(tstate);
+        tstate = NULL;
+    }
+    pthread_mutex_unlock(&self->lock);
 
 exit:
     if (sql_compatibility_value){
