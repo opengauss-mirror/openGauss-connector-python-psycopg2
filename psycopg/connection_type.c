@@ -1320,7 +1320,7 @@ static struct PyGetSetDef connectionObject_getsets[] = {
 
 /* register the uint typecasters */
 static int
-register_type_uint(connectionObject *self, PyThreadState **tstate)
+register_type_uint(connectionObject *self)
 {
     int rv = -1;
     typecastObject *obj = NULL;
@@ -1332,10 +1332,13 @@ register_type_uint(connectionObject *self, PyThreadState **tstate)
     long int* _typecast_INTEGER_types;
     _typecast_INTEGER_types = (long int*)malloc((size+1)*sizeof(long int));
 
+    Py_BEGIN_ALLOW_THREADS;
     for (int i=0; i< size; i++) {
-        unsigned int uint_val = pq_get_pg_catalog_custom_type_oid(self, uint_arr[i], tstate);
+        unsigned int uint_val = pq_get_pg_catalog_custom_type_oid(self, uint_arr[i], &_save);
         _typecast_INTEGER_types[i] = (long int)uint_val;
     }
+    Py_END_ALLOW_THREADS;
+
     typecastObject_initlist _typecast_builtins[] = {
         {"INTEGER", _typecast_INTEGER_types, typecast_INTEGER_cast, NULL},
     };
@@ -1429,22 +1432,16 @@ connection_setup(connectionObject *self, const char *dsn, long int async)
     Dprintf("connection_setup: good connection object at %p, refcnt = "
         FORMAT_CODE_PY_SSIZE_T,
         self, Py_REFCNT(self));
-    PyThreadState *tstate = (PyThreadState *)malloc(sizeof(PyThreadState));
 
     Py_BEGIN_ALLOW_THREADS;
     pthread_mutex_lock(&self->lock);
     sql_compatibility_value = pq_get_guc_locked(self, "sql_compatibility", &_save);
     set_sql_compatibility(self, sql_compatibility_value);
-    memcpy(tstate, _save, sizeof(_save));
     pthread_mutex_unlock(&self->lock);
     Py_END_ALLOW_THREADS;
     
     pthread_mutex_lock(&self->lock);
-    register_type_uint(self, &tstate);
-    if (tstate) {
-        free(tstate);
-        tstate = NULL;
-    }
+    register_type_uint(self);
     pthread_mutex_unlock(&self->lock);
 
 exit:
