@@ -223,6 +223,20 @@ PyObject *Bytes_Format(PyObject *format, PyObject *args, char place_holder) {
                 args_owned = 1;
                 arglen = -1;    // exists place holder as "%(name)s", set these arguments to invalid
                 argidx = -2;
+            } else {
+                char c = *fmt;
+                if (!rescnt) {
+                    rescnt += reslen;
+                    reslen *= 2;
+                    if ((result = resize_bytes(result, reslen)) == NULL) goto error;
+                    res = Bytes_AS_STRING(result) + reslen - rescnt;
+                }
+                if (c == '%' || c == ' ') {      // '%%' will be transfered to '%'
+                    *res = '%';
+                    --rescnt;
+                    ++res;
+                    ++fmt;
+                }
             }
         } /* '%' */
     } /* until end */
@@ -289,14 +303,14 @@ PyObject *Bytes_Format(PyObject *format, PyObject *args, char place_holder) {
                 PyErr_SetString(PyExc_ValueError, "incomplete format");
                 goto error;
             }
-            else if (c == '%') {        // '%%' will be transfered to '%'
+            else if (c == '%' || c == ' ') {        // '%%' will be transfered to '%'
                 if (!rescnt) {
                     rescnt += reslen;
                     reslen *= 2;
                     if ((result = resize_bytes(result, reslen)) == NULL) goto error;
                     res = Bytes_AS_STRING(result) + reslen - rescnt;
                 }
-                *res = c;
+                *res = '%';
                 --rescnt;
                 ++res;
                 ++fmt;
