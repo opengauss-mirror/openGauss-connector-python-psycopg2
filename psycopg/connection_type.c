@@ -1439,9 +1439,7 @@ connection_setup(connectionObject *self, const char *dsn, long int async)
     Py_END_ALLOW_THREADS;
     
     pthread_mutex_lock(&self->lock);
-    if (register_type_uint(self, &tstate)) {
-        goto exit;
-    }
+    register_type_uint(self, &tstate);
     if (tstate) {
         free(tstate);
         tstate = NULL;
