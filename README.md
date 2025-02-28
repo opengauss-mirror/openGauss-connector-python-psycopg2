@@ -44,6 +44,16 @@ openEuler-x86_64:
 
 `https://opengauss.obs.cn-south-1.myhuaweicloud.com/latest/x86_openEuler/openGauss-<VERSION>-openEuler-x86_64-Python.tar.gz`
 
+也可以在[官网下载页面](https://opengauss.org/zh/download/)的openGauss Connectors部分下载各版本已发布的驱动包，下载好之后，需对软件包的完整性进行校验，操作步骤如下：
+
+（1）计算下载包的sha256值（以6.0.1版本发布包为例，其他版本操作相同）
+
+~~~
+sha256sum openGauss-Python-6.0.1-openEuler22.03-aarch64.tar.gz
+~~~
+
+（2）在[官网下载页面](https://opengauss.org/zh/download/)的openGauss Connectors部分中复制对应驱动包的sha256值，与步骤（1）计算出的sha256值做对比，如果一致则可以确认下载下来的包是完整的，否则需要重新下载。
+
 ## 使用说明
 
 ### 安装 psycopg2
