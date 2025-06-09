@@ -1331,6 +1331,7 @@ register_type_uint(connectionObject *self)
     int size = sizeof(uint_arr) / sizeof(uint_arr[0]);
     long int* _typecast_INTEGER_types;
     _typecast_INTEGER_types = (long int*)malloc((size+1)*sizeof(long int));
+    memset(_typecast_INTEGER_types, 0, (size + 1) * sizeof(long int));
 
     Py_BEGIN_ALLOW_THREADS;
     for (int i=0; i< size; i++) {
