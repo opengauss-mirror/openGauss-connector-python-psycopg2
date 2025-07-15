@@ -1280,6 +1280,133 @@ def execute_values(cur, sql, argslist, template=None, page_size=100, fetch=False
 
     return result
 
+import atexit
+import math
+import multiprocessing
+import numpy as np
+from functools import partial
+from multiprocessing import Pool
+_conn = None
+_cur = None
+process_pool = None
+def init_worker(scan_params, db_config):
+    global _conn, _cur
+    try:
+        _conn = psycopg2.connect(**db_config)
+        _conn.autocommit = True
+        _cur = _conn.cursor()
+
+        sql_lines = [f"SET {k} = {v};"
+            for k, v in scan_params.items()]
+        _cur.execute(" ".join(sql_lines))
+        atexit.register(close_connection)
+    except Exception as e:
+        print(f"Connection failed: {e}")
+        _conn = None
+
+def close_connection():
+    if _conn is not None:
+        _conn.close()
+    if _cur is not None:
+        _cur.close()
+
+def init_process_pool(cur, max_workers, scan_params):
+    db_config = {
+        'dbname': cur.connection.info.dbname,
+        'user': cur.connection.info.user,
+        'password': cur.connection.info.password,
+        'host': cur.connection.info.host,
+        'port': cur.connection.info.port
+    }
+    ctx = multiprocessing.get_context("fork")
+    global process_pool
+    process_pool = ctx.Pool(
+        max_workers,
+        initializer = init_worker,
+        initargs = (scan_params, db_config)
+    )
+
+def close_process_pool():
+    process_pool.close()
+    process_pool.join()
+
+def execute_single(local_argslist, sql_template, place_holder):
+    local_res = []
+    global _cur
+    if _cur is None:
+        return []
+    
+    try:
+        values = []
+        real_size = 0
+        for arg in local_argslist:
+            if isinstance(arg, list) or isinstance(arg, np.ndarray):
+                real_size = len(arg)
+                break
+
+        for item in local_argslist:
+            if isinstance(item, np.ndarray):
+                item = item.tolist()
+            if isinstance(item, list):
+                if isinstance(item[0], list):
+                    values.append(str(sub) for sub in item)
+                else:
+                    values.append(item)
+            else:
+                values.append([item] * real_size)
+        args_tuple = list(zip(*values))
+
+        for args in args_tuple:
+            _cur.execute(sql_template, args)
+            local_res.append(_cur.fetchall())
+        return local_res
+    except Exception as e:
+        print(f"Search failed: {e}")
+        return []
+
+def execute_multi_select(cur, sql_template, argslist, scan_params, max_workers = None):
+    global process_pool
+    is_init = False
+
+    if not sql_template or len(argslist) == 0:
+        return []
+    if max_workers is None:
+        max_workers = multiprocessing.cpu_count()
+    if process_pool is None:
+        init_process_pool(cur, max_workers, scan_params)
+        is_init = True
+
+    n_groups = 1
+    for arg in argslist:
+        if isinstance(arg, list) or isinstance(arg, np.ndarray):
+            n_groups = max(n_groups, len(arg))
+        
+    chunk_size = math.ceil(n_groups / max_workers)
+    chunks = [[] for _ in range(max_workers)]
+    index = 0
+    for item in argslist:
+        if isinstance(item, list) or isinstance(item, np.ndarray):
+            for i in range(0, n_groups, chunk_size):
+                chunks[index].append(item[i: i + chunk_size])
+                index = index + 1
+        else:
+            for j in chunks:
+                j.append(item)
+        index = 0
+    
+    worker = partial(
+        execute_single,
+        sql_template = sql_template,
+        place_holder = "%"
+    )
+
+    data = process_pool.map(worker, chunks)
+    flat = [item for group in data for item in group]
+
+    if is_init:
+        close_process_pool()
+    return flat
+
 
 def _split_sql(sql):
     """Split *sql* on a single ``%s`` placeholder.
