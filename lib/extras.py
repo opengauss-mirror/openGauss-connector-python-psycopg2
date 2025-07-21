@@ -29,9 +29,17 @@ and classes until a better place in the distribution is found.
 import os as _os
 import time as _time
 import re as _re
+import atexit
+import math
+import multiprocessing
+import threading
+from functools import partial
+from multiprocessing import Pool
 from collections import namedtuple, OrderedDict
 
 import logging as _logging
+
+import numpy as np
 
 import psycopg2
 from psycopg2 import extensions as _ext
@@ -1280,15 +1288,29 @@ def execute_values(cur, sql, argslist, template=None, page_size=100, fetch=False
 
     return result
 
-import atexit
-import math
-import multiprocessing
-import numpy as np
-from functools import partial
-from multiprocessing import Pool
-_conn = None
-_cur = None
-process_pool = None
+class ConnPoolManager:
+    def __init__(self, conn_pool):
+        self.conn_pool = conn_pool
+        self.lock = threading.Lock()
+
+    @staticmethod
+    def check_single_conn_health(conn):
+        global _cur
+        if _cur is None:
+            return None
+        try:
+            _cur.execute("SELECT 1")
+            health_status = _cur.fetchone()[0]
+            return health_status
+        except Exception as e:
+            print(f"check health status failed: {e}")
+            return None
+    
+    def check_health(self):
+        with self.lock:
+            health_results = self.conn_pool.map(self.check_single_conn_health, list(range(0, self.conn_pool._processes)))
+            return True if all(res == 1 for res in health_results) else False
+
 def init_worker(scan_params, db_config):
     global _conn, _cur
     try:
@@ -1310,53 +1332,43 @@ def close_connection():
     if _cur is not None:
         _cur.close()
 
-def init_process_pool(cur, max_workers, scan_params):
-    db_config = {
-        'dbname': cur.connection.info.dbname,
-        'user': cur.connection.info.user,
-        'password': cur.connection.info.password,
-        'host': cur.connection.info.host,
-        'port': cur.connection.info.port
-    }
+def init_conn_pool(db_config, max_workers, scan_params):
     ctx = multiprocessing.get_context("fork")
-    global process_pool
-    process_pool = ctx.Pool(
-        max_workers,
-        initializer = init_worker,
-        initargs = (scan_params, db_config)
+    conn_pool = ctx.Pool(
+        max_workers, 
+        initializer=init_worker, 
+        initargs=(scan_params, db_config)
     )
+    return ConnPoolManager(conn_pool)
 
-def close_process_pool():
-    process_pool.close()
-    process_pool.join()
+def close_conn_pool(conn_pool_mgr):
+    conn_pool_mgr.conn_pool.close()
+    conn_pool_mgr.conn_pool.join()
+    conn_pool_mgr = None
 
-def execute_single(local_argslist, sql_template, place_holder):
+def validate_vector_sql(sql_str):
+    sql_clean = sql_str.strip().lower()
+
+    parts = sql_clean.split(";")
+    if len(parts) > 2 or (len(parts) == 2 and parts[1].strip()):
+        raise ValueError("Only one select statement is allowed")
+    sql_core = parts[0].strip()
+
+    if not sql_core.startswith("select"):
+        raise ValueError("Only select query is supported")
+    
+    if not _re.search(r"<->|<=>|<#>|<+>|<~>|<%>", sql_core):
+        raise ValueError("Query must include a vector similarity operator: <->|<=>|<#>|<+>|<~>|<%>")
+    return True
+
+def execute_single(local_argslist, sql_template):
     local_res = []
     global _cur
     if _cur is None:
         return []
     
     try:
-        values = []
-        real_size = 0
-        for arg in local_argslist:
-            if isinstance(arg, list) or isinstance(arg, np.ndarray):
-                real_size = len(arg)
-                break
-
-        for item in local_argslist:
-            if isinstance(item, np.ndarray):
-                item = item.tolist()
-            if isinstance(item, list):
-                if isinstance(item[0], list):
-                    values.append(str(sub) for sub in item)
-                else:
-                    values.append(item)
-            else:
-                values.append([item] * real_size)
-        args_tuple = list(zip(*values))
-
-        for args in args_tuple:
+        for args in local_argslist:
             _cur.execute(sql_template, args)
             local_res.append(_cur.fetchall())
         return local_res
@@ -1364,49 +1376,33 @@ def execute_single(local_argslist, sql_template, place_holder):
         print(f"Search failed: {e}")
         return []
 
-def execute_multi_select(cur, sql_template, argslist, scan_params, max_workers = None):
-    global process_pool
-    is_init = False
+def execute_multi_search(db_config, conn_pool_mgr, sql_template, argslist, scan_params, max_workers=None):
+    local_pool_init = False
+    validate_vector_sql(sql_template)
 
-    if not sql_template or len(argslist) == 0:
-        return []
+    if len(argslist) == 0:
+        raise ValueError("Query parameters must not be empty")
     if max_workers is None:
         max_workers = multiprocessing.cpu_count()
-    if process_pool is None:
-        init_process_pool(cur, max_workers, scan_params)
-        is_init = True
-
-    n_groups = 1
-    for arg in argslist:
-        if isinstance(arg, list) or isinstance(arg, np.ndarray):
-            n_groups = max(n_groups, len(arg))
+    if conn_pool_mgr is None:
+        conn_pool_mgr = init_conn_pool(db_config, max_workers, scan_params)
+        local_pool_init = True
+    total_size = len(argslist)
         
-    chunk_size = math.ceil(n_groups / max_workers)
-    chunks = [[] for _ in range(max_workers)]
-    index = 0
-    for item in argslist:
-        if isinstance(item, list) or isinstance(item, np.ndarray):
-            for i in range(0, n_groups, chunk_size):
-                chunks[index].append(item[i: i + chunk_size])
-                index = index + 1
-        else:
-            for j in chunks:
-                j.append(item)
-        index = 0
+    chunk_size = math.ceil(total_size / max_workers)
+    chunks = [argslist[i: i + chunk_size] for i in range(0, total_size, chunk_size)]
     
     worker = partial(
-        execute_single,
-        sql_template = sql_template,
-        place_holder = "%"
+        execute_single, 
+        sql_template=sql_template
     )
+    with conn_pool_mgr.lock:
+        data = conn_pool_mgr.conn_pool.map(worker, chunks)
+        flat = [item for group in data for item in group]
 
-    data = process_pool.map(worker, chunks)
-    flat = [item for group in data for item in group]
-
-    if is_init:
-        close_process_pool()
+    if local_pool_init:
+        close_conn_pool(conn_pool_mgr)
     return flat
-
 
 def _split_sql(sql):
     """Split *sql* on a single ``%s`` placeholder.
