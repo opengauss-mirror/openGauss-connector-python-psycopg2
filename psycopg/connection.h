@@ -22,6 +22,9 @@
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public
  * License for more details.
+ *
+ * Portions Copyright (c) 2025 Huawei Technologies Co.,Ltd.
+ * This file has been modified to adapt to openGauss.
  */
 
 #ifndef PSYCOPG_CONNECTION_H
