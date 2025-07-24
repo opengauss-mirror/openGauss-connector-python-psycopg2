@@ -72,7 +72,7 @@ _pydatetime_string_date_time(pydatetimeObject *self)
     case PSYCO_DATETIME_TIMESTAMP:
         tz = PyObject_GetAttrString(self->wrapped, "tzinfo");
         if (!tz) { goto error; }
-        fmt = (tz == Py_None) ? "'%s'::timestamp" : "'%s'::timestamptz";
+        fmt = "'%s'";
         Py_DECREF(tz);
         break;
     }
