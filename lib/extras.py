@@ -29,9 +29,17 @@ and classes until a better place in the distribution is found.
 import os as _os
 import time as _time
 import re as _re
+import atexit
+import math
+import multiprocessing
+import threading
+from functools import partial
+from multiprocessing import Pool
 from collections import namedtuple, OrderedDict
 
 import logging as _logging
+
+import numpy as np
 
 import psycopg2
 from psycopg2 import extensions as _ext
@@ -1280,6 +1288,121 @@ def execute_values(cur, sql, argslist, template=None, page_size=100, fetch=False
 
     return result
 
+class ConnPoolManager:
+    def __init__(self, conn_pool):
+        self.conn_pool = conn_pool
+        self.lock = threading.Lock()
+
+    @staticmethod
+    def check_single_conn_health(conn):
+        global _cur
+        if _cur is None:
+            return None
+        try:
+            _cur.execute("SELECT 1")
+            health_status = _cur.fetchone()[0]
+            return health_status
+        except Exception as e:
+            print(f"check health status failed: {e}")
+            return None
+    
+    def check_health(self):
+        with self.lock:
+            health_results = self.conn_pool.map(self.check_single_conn_health, list(range(0, self.conn_pool._processes)))
+            return True if all(res == 1 for res in health_results) else False
+
+def init_worker(scan_params, db_config):
+    global _conn, _cur
+    try:
+        _conn = psycopg2.connect(**db_config)
+        _conn.autocommit = True
+        _cur = _conn.cursor()
+
+        sql_lines = [f"SET {k} = {v};"
+            for k, v in scan_params.items()]
+        _cur.execute(" ".join(sql_lines))
+        atexit.register(close_connection)
+    except Exception as e:
+        print(f"Connection failed: {e}")
+        _conn = None
+
+def close_connection():
+    if _conn is not None:
+        _conn.close()
+    if _cur is not None:
+        _cur.close()
+
+def init_conn_pool(db_config, max_workers, scan_params):
+    ctx = multiprocessing.get_context("fork")
+    conn_pool = ctx.Pool(
+        max_workers, 
+        initializer=init_worker, 
+        initargs=(scan_params, db_config)
+    )
+    return ConnPoolManager(conn_pool)
+
+def close_conn_pool(conn_pool_mgr):
+    conn_pool_mgr.conn_pool.close()
+    conn_pool_mgr.conn_pool.join()
+    conn_pool_mgr = None
+
+def validate_vector_sql(sql_str):
+    sql_clean = sql_str.strip().lower()
+
+    parts = sql_clean.split(";")
+    if len(parts) > 2 or (len(parts) == 2 and parts[1].strip()):
+        raise ValueError("Only one select statement is allowed")
+    sql_core = parts[0].strip()
+
+    if not sql_core.startswith("select"):
+        raise ValueError("Only select query is supported")
+    
+    if not _re.search(r"<->|<=>|<#>|<+>|<~>|<%>", sql_core):
+        raise ValueError("Query must include a vector similarity operator: <->|<=>|<#>|<+>|<~>|<%>")
+    return True
+
+def execute_single(local_argslist, sql_template):
+    local_res = []
+    global _cur
+    if _cur is None:
+        return []
+    
+    try:
+        for args in local_argslist:
+            _cur.execute(sql_template, args)
+            local_res.append(_cur.fetchall())
+        return local_res
+    except Exception as e:
+        print(f"Search failed: {e}")
+        return []
+
+def execute_multi_search(db_config, conn_pool_mgr, sql_template, argslist, scan_params, max_workers=None):
+    local_pool_init = False
+    validate_vector_sql(sql_template)
+
+    if len(argslist) == 0:
+        raise ValueError("Query parameters must not be empty")
+    if max_workers is None:
+        max_workers = multiprocessing.cpu_count()
+    if conn_pool_mgr is None:
+        conn_pool_mgr = init_conn_pool(db_config, max_workers, scan_params)
+        local_pool_init = True
+    total_size = len(argslist)
+        
+    chunk_size = math.ceil(total_size / max_workers)
+    chunks = [argslist[i: i + chunk_size] for i in range(0, total_size, chunk_size)]
+    
+    worker = partial(
+        execute_single, 
+        sql_template=sql_template
+    )
+    with conn_pool_mgr.lock:
+        data = conn_pool_mgr.conn_pool.map(worker, chunks)
+        flat = [item for group in data for item in group]
+
+    if local_pool_init:
+        close_conn_pool(conn_pool_mgr)
+    return flat
 
 def _split_sql(sql):
     """Split *sql* on a single ``%s`` placeholder.
