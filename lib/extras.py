@@ -34,7 +34,7 @@ import math
 import multiprocessing
 import threading
 from functools import partial
-from multiprocessing import Pool
+from multiprocessing import Pool, Manager
 from collections import namedtuple, OrderedDict
 
 import logging as _logging
@@ -1311,7 +1311,10 @@ class ConnPoolManager:
             health_results = self.conn_pool.map(self.check_single_conn_health, list(range(0, self.conn_pool._processes)))
             return True if all(res == 1 for res in health_results) else False
 
+conn_pool_init_status = None
+conn_pool_init_lock = threading.Lock()
 def init_worker(scan_params, db_config):
+    global conn_pool_init_status
     global _conn, _cur
     try:
         _conn = psycopg2.connect(**db_config)
@@ -1322,7 +1325,9 @@ def init_worker(scan_params, db_config):
             for k, v in scan_params.items()]
         _cur.execute(" ".join(sql_lines))
         atexit.register(close_connection)
+        conn_pool_init_status[_os.getpid()] = (True, "")
     except Exception as e:
+        conn_pool_init_status[_os.getpid()] = (False, str(e))
         print(f"Connection failed: {e}")
         _conn = None
 
@@ -1333,12 +1338,36 @@ def close_connection():
         _cur.close()
 
 def init_conn_pool(db_config, max_workers, scan_params):
-    ctx = multiprocessing.get_context("fork")
-    conn_pool = ctx.Pool(
-        max_workers, 
-        initializer=init_worker, 
-        initargs=(scan_params, db_config)
-    )
+    manager = Manager()
+    global conn_pool_init_lock
+    with conn_pool_init_lock:
+        global conn_pool_init_status
+        conn_pool_init_status = manager.dict()
+
+        ctx = multiprocessing.get_context("fork")
+        conn_pool = ctx.Pool(
+            max_workers, 
+            initializer=init_worker, 
+            initargs=(scan_params, db_config)
+        )
+
+        start_time = _time.time()
+        while len(conn_pool_init_status) < max_workers:
+            if _time.time() - start_time > 60:
+                missing = max_workers - len(conn_pool_init_status)
+                conn_pool.terminate()
+                raise RuntimeError("wait init pool timeout, missing: {missing}.")
+            _time.sleep(0.01)
+        all_success = True
+        for pid, (success, err_msg) in conn_pool_init_status.items():
+            if not success:
+                all_success = False
+                print(f"process: {pid}, init failed, err_msg: {err_msg}")
+
+        if not all_success:
+            conn_pool.terminate()
+            raise RuntimeError("init pool failed.")
+
     return ConnPoolManager(conn_pool)
 
 def close_conn_pool(conn_pool_mgr):
@@ -1357,28 +1386,30 @@ def validate_vector_sql(sql_str):
     if not sql_core.startswith("select"):
         raise ValueError("Only select query is supported")
     
-    if not _re.search(r"<->|<=>|<#>|<+>|<~>|<%>", sql_core):
+    if not _re.search(r"<->|<=>|<#>|<\+>|<~>|<%>", sql_core):
         raise ValueError("Query must include a vector similarity operator: <->|<=>|<#>|<+>|<~>|<%>")
-    return True
+
+    parttern = r'%((?!s).|$)'
+    return _re.sub(parttern, r'%%\1', sql_clean)
 
 def execute_single(local_argslist, sql_template):
     local_res = []
     global _cur
     if _cur is None:
-        return []
-    
+        local_res.append([("ERROR", "cursor is None.")])
+        return local_res
     try:
         for args in local_argslist:
             _cur.execute(sql_template, args)
             local_res.append(_cur.fetchall())
-        return local_res
     except Exception as e:
         print(f"Search failed: {e}")
-        return []
+        local_res.append([("ERROR", str(e))])
+    return local_res
 
 def execute_multi_search(db_config, conn_pool_mgr, sql_template, argslist, scan_params, max_workers=None):
     local_pool_init = False
-    validate_vector_sql(sql_template)
+    sql_template = validate_vector_sql(sql_template)
 
     if len(argslist) == 0:
         raise ValueError("Query parameters must not be empty")
