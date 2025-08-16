@@ -1356,7 +1356,7 @@ def init_conn_pool(db_config, max_workers, scan_params):
             if _time.time() - start_time > 60:
                 missing = max_workers - len(conn_pool_init_status)
                 conn_pool.terminate()
-                raise RuntimeError("wait init pool timeout, missing: {missing}.")
+                raise RuntimeError(f"wait init pool timeout, missing: {missing}.")
             _time.sleep(0.01)
         all_success = True
         for pid, (success, err_msg) in conn_pool_init_status.items():
@@ -1411,20 +1411,23 @@ def execute_multi_search(db_config, conn_pool_mgr, sql_template, argslist, scan_
     local_pool_init = False
     sql_template = validate_vector_sql(sql_template)
 
-    if len(argslist) == 0:
+    total_size = len(argslist)
+    if total_size == 0:
         raise ValueError("Query parameters must not be empty")
     if max_workers is None:
         max_workers = multiprocessing.cpu_count()
     if conn_pool_mgr is None:
+        max_workers = min(max_workers, total_size)
         conn_pool_mgr = init_conn_pool(db_config, max_workers, scan_params)
         local_pool_init = True
-    total_size = len(argslist)
-        
+    else:
+        max_workers = conn_pool_mgr.conn_pool._processes
+
     chunk_size = math.ceil(total_size / max_workers)
     chunks = [argslist[i: i + chunk_size] for i in range(0, total_size, chunk_size)]
     
     worker = partial(
-        execute_single, 
+        execute_single,
         sql_template=sql_template
     )
     with conn_pool_mgr.lock:
