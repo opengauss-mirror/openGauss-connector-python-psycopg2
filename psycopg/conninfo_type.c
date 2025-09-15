@@ -81,26 +81,6 @@ user_get(connInfoObject *self)
 }
 
 
-static const char password_doc[] =
-"The password of the connection.\n"
-"\n"
-".. seealso:: libpq docs for `PQpass()`__ for details.\n"
-".. __: https://www.postgresql.org/docs/current/static/libpq-status.html"
-    "#LIBPQ-PQPASS";
-
-static PyObject *
-password_get(connInfoObject *self)
-{
-    const char *val;
-
-    val = PQpass(self->conn->pgconn);
-    if (!val) {
-        Py_RETURN_NONE;
-    }
-    return conn_text_from_chars(self->conn, val);
-}
-
-
 static const char host_doc[] =
 "The server host name of the connection.\n"
 "\n"
@@ -534,7 +514,6 @@ exit:
 static struct PyGetSetDef connInfoObject_getsets[] = {
     { "dbname", (getter)dbname_get, NULL, (char *)dbname_doc },
     { "user", (getter)user_get, NULL, (char *)user_doc },
-    { "password", (getter)password_get, NULL, (char *)password_doc },
     { "host", (getter)host_get, NULL, (char *)host_doc },
     { "port", (getter)port_get, NULL, (char *)port_doc },
     { "options", (getter)options_get, NULL, (char *)options_doc },
