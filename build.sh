@@ -202,6 +202,7 @@ function target_file_copy()
 {
     cd ${LOCAL_DIR}/build/lib*
     mv psycopg2/_psycopg*.so psycopg2/_psycopg.so
+    strip --strip-all psycopg2/_psycopg.so
 
     mkdir -p  lib
     #copy libraries into lib
@@ -228,7 +229,7 @@ function build_python()
     echo "GAUSSHOME: ${GAUSSHOME}"
 
     change_gaussdb_version 
-    check_python 
+    check_python
     ${PYTHON} ./setup.py build
     if [ $? -ne 0 ]; then
         die "failed to compile psycopg2."

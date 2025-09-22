@@ -532,6 +532,8 @@ sources = [os.path.join('psycopg', x) for x in sources]
 depends = [os.path.join('psycopg', x) for x in depends]
 
 ext.append(Extension("psycopg2._psycopg", sources,
+                     extra_link_args=['-Wl,-z,relro,-z,now'],
+                     extra_compile_args=['-fstack-protector-strong'],
                      define_macros=define_macros,
                      include_dirs=include_dirs,
                      depends=depends,
