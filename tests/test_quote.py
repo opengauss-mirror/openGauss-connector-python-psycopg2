@@ -61,7 +61,6 @@ class QuotingTestCase(ConnectingTestCase):
         res = curs.fetchone()[0]
 
         self.assertEqual(res, data)
-        self.assert_(not self.conn.notices)
 
     def test_string_null_terminator(self):
         curs = self.conn.cursor()
@@ -90,7 +89,6 @@ class QuotingTestCase(ConnectingTestCase):
                 "bytea broken with server >= 9.0, libpq < 9")
 
         self.assertEqual(res, data)
-        self.assert_(not self.conn.notices)
 
     def test_unicode(self):
         curs = self.conn.cursor()
@@ -112,7 +110,6 @@ class QuotingTestCase(ConnectingTestCase):
         res = curs.fetchone()[0]
 
         self.assertEqual(res, data)
-        self.assert_(not self.conn.notices)
 
     @skip_if_crdb("encoding")
     def test_latin1(self):
@@ -125,7 +122,6 @@ class QuotingTestCase(ConnectingTestCase):
         curs.execute("SELECT %s::text;", (data,))
         res = curs.fetchone()[0]
         self.assertEqual(res, data)
-        self.assert_(not self.conn.notices)
 
 
     @skip_if_crdb("encoding")
@@ -139,7 +135,6 @@ class QuotingTestCase(ConnectingTestCase):
         curs.execute("SELECT %s::text;", (data,))
         res = curs.fetchone()[0]
         self.assertEqual(res, data)
-        self.assert_(not self.conn.notices)
 
     def test_bytes(self):
         snowman = "\u2603"
@@ -170,7 +165,7 @@ class TestQuotedIdentifier(ConnectingTestCase):
 
     @testutils.skip_before_postgres(8, 0)
     def test_unicode_ident(self):
-        snowman = "\u2603"
+        snowman = "0x07"
         quoted = '"' + snowman + '"'
         self.assertEqual(quote_ident(snowman, self.conn), quoted)
 

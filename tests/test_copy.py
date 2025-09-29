@@ -71,7 +71,7 @@ class CopyTests(ConnectingTestCase):
         curs = self.conn.cursor()
         curs.execute('''
             CREATE TEMPORARY TABLE tcopy (
-              id serial PRIMARY KEY,
+              id int,
               data text
             )''')
 

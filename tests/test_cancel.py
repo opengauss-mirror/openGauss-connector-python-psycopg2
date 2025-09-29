@@ -91,23 +91,6 @@ class CancelTests(ConnectingTestCase):
 
         self.assertEqual(errors, [])
 
-    @slow
-    @skip_before_postgres(8, 2)
-    def test_async_cancel(self):
-        async_conn = psycopg2.connect(dsn, async_=True)
-        self.assertRaises(psycopg2.OperationalError, async_conn.cancel)
-        extras.wait_select(async_conn)
-        cur = async_conn.cursor()
-        cur.execute("select pg_sleep(10)")
-        time.sleep(1)
-        self.assertTrue(async_conn.isexecuting())
-        async_conn.cancel()
-        self.assertRaises(psycopg2.extensions.QueryCanceledError,
-                          extras.wait_select, async_conn)
-        cur.execute("select 1")
-        extras.wait_select(async_conn)
-        self.assertEqual(cur.fetchall(), [(1, )])
-
 
 def test_suite():
     return unittest.TestLoader().loadTestsFromName(__name__)

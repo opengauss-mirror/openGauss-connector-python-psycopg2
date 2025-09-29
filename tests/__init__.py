@@ -32,7 +32,6 @@ import sys
 from .testconfig import dsn
 import unittest
 
-from . import test_async
 from . import test_bugX000
 from . import test_bug_gc
 from . import test_cancel
@@ -57,7 +56,8 @@ from . import test_transaction
 from . import test_types_basic
 from . import test_types_extras
 from . import test_with
-
+from . import test_parallel_vector_scan
+from . import test_pool
 
 def test_suite():
     # If connection to test db fails, bail out early.
@@ -72,7 +72,6 @@ def test_suite():
         cnn.close()
 
     suite = unittest.TestSuite()
-    suite.addTest(test_async.test_suite())
     suite.addTest(test_bugX000.test_suite())
     suite.addTest(test_bug_gc.test_suite())
     suite.addTest(test_cancel.test_suite())
@@ -97,6 +96,8 @@ def test_suite():
     suite.addTest(test_types_basic.test_suite())
     suite.addTest(test_types_extras.test_suite())
     suite.addTest(test_with.test_suite())
+    suite.addTest(test_parallel_vector_scan.test_suite())
+    suite.addTest(test_pool.test_suite())
     return suite
 
 

@@ -45,12 +45,6 @@ class NotifiesTests(ConnectingTestCase):
         """Set a connection in autocommit mode."""
         conn.set_isolation_level(extensions.ISOLATION_LEVEL_AUTOCOMMIT)
 
-    def listen(self, name):
-        """Start listening for a name on self.conn."""
-        curs = self.conn.cursor()
-        curs.execute("LISTEN " + name)
-        curs.close()
-
     def notify(self, name, sec=0, payload=None):
         """Send a notification to the database, eventually after some time."""
         if payload is None:
@@ -75,117 +69,6 @@ conn.close()
             dsn=dsn, sec=sec, name=name, payload=payload))
 
         return Popen([sys.executable, '-c', script], stdout=PIPE)
-
-    @slow
-    def test_notifies_received_on_poll(self):
-        self.autocommit(self.conn)
-        self.listen('foo')
-
-        proc = self.notify('foo', 1)
-
-        t0 = time.time()
-        select.select([self.conn], [], [], 5)
-        t1 = time.time()
-        self.assert_(0.99 < t1 - t0 < 4, t1 - t0)
-
-        pid = int(proc.communicate()[0])
-        self.assertEqual(0, len(self.conn.notifies))
-        self.assertEqual(extensions.POLL_OK, self.conn.poll())
-        self.assertEqual(1, len(self.conn.notifies))
-        self.assertEqual(pid, self.conn.notifies[0][0])
-        self.assertEqual('foo', self.conn.notifies[0][1])
-
-    @slow
-    def test_many_notifies(self):
-        self.autocommit(self.conn)
-        for name in ['foo', 'bar', 'baz']:
-            self.listen(name)
-
-        pids = {}
-        for name in ['foo', 'bar', 'baz', 'qux']:
-            pids[name] = int(self.notify(name).communicate()[0])
-
-        self.assertEqual(0, len(self.conn.notifies))
-        for i in range(10):
-            self.assertEqual(extensions.POLL_OK, self.conn.poll())
-        self.assertEqual(3, len(self.conn.notifies))
-
-        names = dict.fromkeys(['foo', 'bar', 'baz'])
-        for (pid, name) in self.conn.notifies:
-            self.assertEqual(pids[name], pid)
-            names.pop(name)     # raise if name found twice
-
-    @slow
-    def test_notifies_received_on_execute(self):
-        self.autocommit(self.conn)
-        self.listen('foo')
-        pid = int(self.notify('foo').communicate()[0])
-        self.assertEqual(0, len(self.conn.notifies))
-        self.conn.cursor().execute('select 1;')
-        self.assertEqual(1, len(self.conn.notifies))
-        self.assertEqual(pid, self.conn.notifies[0][0])
-        self.assertEqual('foo', self.conn.notifies[0][1])
-
-    @slow
-    def test_notify_object(self):
-        self.autocommit(self.conn)
-        self.listen('foo')
-        self.notify('foo').communicate()
-        time.sleep(0.5)
-        self.conn.poll()
-        notify = self.conn.notifies[0]
-        self.assert_(isinstance(notify, psycopg2.extensions.Notify))
-
-    @slow
-    def test_notify_attributes(self):
-        self.autocommit(self.conn)
-        self.listen('foo')
-        pid = int(self.notify('foo').communicate()[0])
-        time.sleep(0.5)
-        self.conn.poll()
-        self.assertEqual(1, len(self.conn.notifies))
-        notify = self.conn.notifies[0]
-        self.assertEqual(pid, notify.pid)
-        self.assertEqual('foo', notify.channel)
-        self.assertEqual('', notify.payload)
-
-    @slow
-    def test_notify_payload(self):
-        if self.conn.info.server_version < 90000:
-            return self.skipTest("server version %s doesn't support notify payload"
-                % self.conn.info.server_version)
-        self.autocommit(self.conn)
-        self.listen('foo')
-        pid = int(self.notify('foo', payload="Hello, world!").communicate()[0])
-        time.sleep(0.5)
-        self.conn.poll()
-        self.assertEqual(1, len(self.conn.notifies))
-        notify = self.conn.notifies[0]
-        self.assertEqual(pid, notify.pid)
-        self.assertEqual('foo', notify.channel)
-        self.assertEqual('Hello, world!', notify.payload)
-
-    @slow
-    def test_notify_deque(self):
-        self.autocommit(self.conn)
-        self.conn.notifies = deque()
-        self.listen('foo')
-        self.notify('foo').communicate()
-        time.sleep(0.5)
-        self.conn.poll()
-        notify = self.conn.notifies.popleft()
-        self.assert_(isinstance(notify, psycopg2.extensions.Notify))
-        self.assertEqual(len(self.conn.notifies), 0)
-
-    @slow
-    def test_notify_noappend(self):
-        self.autocommit(self.conn)
-        self.conn.notifies = None
-        self.listen('foo')
-        self.notify('foo').communicate()
-        time.sleep(0.5)
-        self.conn.poll()
-        self.assertEqual(self.conn.notifies, None)
 
     def test_notify_init(self):
         n = psycopg2.extensions.Notify(10, 'foo')

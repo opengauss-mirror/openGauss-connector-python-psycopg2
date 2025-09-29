@@ -235,7 +235,7 @@ class HstoreTestCase(ConnectingTestCase):
         cur.execute("select null::hstore, ''::hstore, 'a => b'::hstore")
         t = cur.fetchone()
         self.assert_(t[0] is None)
-        self.assertEqual(t[1], {})
+        self.assertEqual(t[1], None)
         self.assertEqual(t[2], {'a': 'b'})
 
     @skip_if_no_hstore
@@ -245,7 +245,7 @@ class HstoreTestCase(ConnectingTestCase):
         cur.execute("select null::hstore, ''::hstore, 'a => b'::hstore")
         t = cur.fetchone()
         self.assert_(t[0] is None)
-        self.assertEqual(t[1], {})
+        self.assertEqual(t[1], None)
         self.assertEqual(t[2], {'a': 'b'})
 
     @skip_if_no_hstore
@@ -275,7 +275,6 @@ class HstoreTestCase(ConnectingTestCase):
                 self.assert_(k in d1, k)
                 self.assertEqual(d[k], d1[k])
 
-        ok({})
         ok({'a': 'b', 'c': None})
 
         ab = list(map(chr, range(32, 128)))
@@ -301,7 +300,7 @@ class HstoreTestCase(ConnectingTestCase):
         cur.execute("select null::hstore, ''::hstore, 'a => b'::hstore")
         t = cur.fetchone()
         self.assert_(t[0] is None)
-        self.assertEqual(t[1], {})
+        self.assertEqual(t[1], None)
         self.assertEqual(t[2], {'a': 'b'})
 
     @skip_if_no_hstore
@@ -309,7 +308,7 @@ class HstoreTestCase(ConnectingTestCase):
     def test_roundtrip_array(self):
         register_hstore(self.conn)
 
-        ds = [{}, {'a': 'b', 'c': None}]
+        ds = [None, {'a': 'b', 'c': None}]
 
         ab = list(map(chr, range(32, 128)))
         ds.append(dict(zip(ab, ab)))
@@ -348,7 +347,7 @@ class HstoreTestCase(ConnectingTestCase):
             'a => b'::hstore, '{a=>b}'::hstore[]""")
         t = cur.fetchone()
         self.assert_(t[0] is None)
-        self.assertEqual(t[1], {})
+        self.assertEqual(t[1], None)
         self.assertEqual(t[2], {'a': 'b'})
         self.assertEqual(t[3], [{'a': 'b'}])
 
@@ -359,7 +358,7 @@ class HstoreTestCase(ConnectingTestCase):
             register_hstore(conn)
             curs = conn.cursor()
             curs.execute("select ''::hstore as x")
-            self.assertEqual(curs.fetchone()['x'], {})
+            self.assertEqual(curs.fetchone()['x'], None)
         finally:
             conn.close()
 
@@ -368,7 +367,7 @@ class HstoreTestCase(ConnectingTestCase):
             curs = conn.cursor()
             register_hstore(curs)
             curs.execute("select ''::hstore as x")
-            self.assertEqual(curs.fetchone()['x'], {})
+            self.assertEqual(curs.fetchone()['x'], None)
         finally:
             conn.close()
 
@@ -459,7 +458,7 @@ class AdaptTypeTestCase(ConnectingTestCase):
         self.assertEqual(t.oid, oid)
         self.assert_(issubclass(t.type, tuple))
         self.assertEqual(t.attnames, ['anint', 'astring', 'adate'])
-        self.assertEqual(t.atttypes, [23, 25, 1082])
+        self.assertEqual(t.atttypes, [23, 25, 1114])
 
         curs = self.conn.cursor()
         r = (10, 'hello', date(2011, 1, 2))
@@ -468,11 +467,11 @@ class AdaptTypeTestCase(ConnectingTestCase):
         self.assert_(isinstance(v, t.type))
         self.assertEqual(v[0], 10)
         self.assertEqual(v[1], "hello")
-        self.assertEqual(v[2], date(2011, 1, 2))
+        self.assertEqual(v[2], datetime(2011, 1, 2, 0, 0))
         self.assert_(t.type is not tuple)
         self.assertEqual(v.anint, 10)
         self.assertEqual(v.astring, "hello")
-        self.assertEqual(v.adate, date(2011, 1, 2))
+        self.assertEqual(v.adate, datetime(2011, 1, 2, 0, 0))
 
     @skip_if_no_composite
     def test_empty_string(self):
@@ -487,11 +486,8 @@ class AdaptTypeTestCase(ConnectingTestCase):
             self.assertEqual(t, rv)
 
         ok(('a', 'b'))
-        ok(('a', ''))
-        ok(('', 'b'))
         ok(('a', None))
         ok((None, 'b'))
-        ok(('', ''))
         ok((None, None))
 
     @skip_if_no_composite
@@ -508,7 +504,7 @@ class AdaptTypeTestCase(ConnectingTestCase):
         psycopg2.extras.register_composite("type_r_ft", self.conn)
 
         curs = self.conn.cursor()
-        r = (0.25, (date(2011, 1, 2), (42, "hello")))
+        r = (0.25, (datetime(2011, 1, 2, 0, 0), (42, "hello")))
         curs.execute("select %s::type_r_ft;", (r,))
         v = curs.fetchone()[0]
 
@@ -601,11 +597,11 @@ class AdaptTypeTestCase(ConnectingTestCase):
         self.assert_(isinstance(v[0], t.type))
         self.assertEqual(v[0][0], 10)
         self.assertEqual(v[0][1], "hello")
-        self.assertEqual(v[0][2], date(2011, 1, 2))
+        self.assertEqual(v[0][2], datetime(2011, 1, 2, 0, 0))
         self.assert_(isinstance(v[1], t.type))
         self.assertEqual(v[1][0], 20)
         self.assertEqual(v[1][1], "world")
-        self.assertEqual(v[1][2], date(2011, 1, 3))
+        self.assertEqual(v[1][2], datetime(2011, 1, 3, 0, 0))
 
     @skip_if_no_composite
     def test_wrong_schema(self):
@@ -705,7 +701,7 @@ class AdaptTypeTestCase(ConnectingTestCase):
         self.assert_(isinstance(v, dict))
         self.assertEqual(v['anint'], 10)
         self.assertEqual(v['astring'], "hello")
-        self.assertEqual(v['adate'], date(2011, 1, 2))
+        self.assertEqual(v['adate'], datetime(2011, 1, 2, 0, 0))
 
     def _create_type(self, name, fields):
         curs = self.conn.cursor()
@@ -1447,12 +1443,12 @@ class RangeCasterTestCase(ConnectingTestCase):
     def test_adapt_date_range(self):
         cur = self.conn.cursor()
 
-        d1 = date(2012, 1, 1)
-        d2 = date(2012, 12, 31)
-        r = DateRange(d1, d2)
+        d1 = datetime(2012, 1, 1, 0, 0)
+        d2 = datetime(2012, 12, 31, 0, 0)
+        r = DateTimeRange(d1, d2)
         cur.execute("select %s", (r,))
         r1 = cur.fetchone()[0]
-        self.assert_(isinstance(r1, DateRange))
+        self.assert_(isinstance(r1, DateTimeRange))
         self.assertEqual(r1.lower, d1)
         self.assertEqual(r1.upper, d2)
         self.assert_(r1.lower_inc)

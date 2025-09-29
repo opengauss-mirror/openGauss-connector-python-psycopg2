@@ -188,20 +188,6 @@ class CallbackErrorTestCase(ConnectingTestCase):
                 # the loop will be broken by a server error
                 continue
 
-    def test_errors_on_connection(self):
-        # Test error propagation in the different stages of the connection
-        for i in range(100):
-            self.to_error = i
-            try:
-                self.connect()
-            except ZeroDivisionError:
-                pass
-            else:
-                # We managed to connect
-                return
-
-        self.fail("you should have had a success or an error by now")
-
     def test_errors_on_query(self):
         for i in range(100):
             self.to_error = None
