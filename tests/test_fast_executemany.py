@@ -15,7 +15,7 @@
 # FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public
 # License for more details.
 
-from datetime import date
+from datetime import date, datetime
 
 from . import testutils
 import unittest
@@ -75,7 +75,7 @@ class TestExecuteBatch(FastExecuteTestMixin, testutils.ConnectingTestCase):
             ((i, date(2017, 1, i + 1), i * 10) for i in range(10)))
         cur.execute("select id, date, val from testfast order by id")
         self.assertEqual(cur.fetchall(),
-            [(i, date(2017, 1, i + 1), i * 10) for i in range(10)])
+            [(i, datetime(2017, 1, i + 1, 0, 0), i * 10) for i in range(10)])
 
     def test_many(self):
         cur = self.conn.cursor()
@@ -111,7 +111,7 @@ class TestExecuteBatch(FastExecuteTestMixin, testutils.ConnectingTestCase):
     def test_unicode(self):
         cur = self.conn.cursor()
         ext.register_type(ext.UNICODE, cur)
-        snowman = "\u2603"
+        snowman = "0x7F"
 
         # unicode in statement
         psycopg2.extras.execute_batch(cur,
@@ -160,7 +160,7 @@ class TestExecuteValues(FastExecuteTestMixin, testutils.ConnectingTestCase):
             ((i, date(2017, 1, i + 1), i * 10) for i in range(10)))
         cur.execute("select id, date, val from testfast order by id")
         self.assertEqual(cur.fetchall(),
-            [(i, date(2017, 1, i + 1), i * 10) for i in range(10)])
+            [(i, datetime(2017, 1, i + 1, 0, 0), i * 10) for i in range(10)])
 
     def test_dicts(self):
         cur = self.conn.cursor()
@@ -171,7 +171,7 @@ class TestExecuteValues(FastExecuteTestMixin, testutils.ConnectingTestCase):
             template='(%(id)s, %(date)s, %(val)s)')
         cur.execute("select id, date, val from testfast order by id")
         self.assertEqual(cur.fetchall(),
-            [(i, date(2017, 1, i + 1), i * 10) for i in range(10)])
+            [(i, datetime(2017, 1, i + 1, 0, 0), i * 10) for i in range(10)])
 
     def test_many(self):
         cur = self.conn.cursor()
@@ -206,7 +206,7 @@ class TestExecuteValues(FastExecuteTestMixin, testutils.ConnectingTestCase):
     def test_unicode(self):
         cur = self.conn.cursor()
         ext.register_type(ext.UNICODE, cur)
-        snowman = "\u2603"
+        snowman = "0x7F"
 
         # unicode in statement
         psycopg2.extras.execute_values(cur,

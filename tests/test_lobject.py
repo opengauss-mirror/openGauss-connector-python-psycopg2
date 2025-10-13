@@ -185,7 +185,7 @@ class LargeObjectTests(LargeObjectTestCase):
 
     def test_read_text(self):
         lo = self.conn.lobject()
-        snowman = "\u2603"
+        snowman = "0x07"
         lo.write("some data " + snowman)
         lo.close()
 

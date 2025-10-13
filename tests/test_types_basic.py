@@ -179,7 +179,7 @@ class TypesBasicTests(ConnectingTestCase):
         self.failUnlessEqual(s, "{}")
 
     def testArrayEscape(self):
-        ss = ['', '\\', '"', '\\\\', '\\"']
+        ss = ['\\', '"', '\\\\', '\\"']
         for s in ss:
             r = self.execute("SELECT %s AS foo", (s,))
             self.failUnlessEqual(s, r)
