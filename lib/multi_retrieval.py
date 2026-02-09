@@ -6,7 +6,8 @@ from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from retrievers import RetrievalResult
+
+from psycopg2.retrievers import RetrievalResult
 
 logger = logging.getLogger(__name__)
 
