@@ -5,9 +5,12 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from psycopg2.retrievers import RetrievalResult
+
+if TYPE_CHECKING:
+    from psycopg2.models import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -244,6 +247,162 @@ class WeightedFusion(FusionStrategy):
             )
 
 
+class ModelRerankFusion(FusionStrategy):
+    """Model-based reranking fusion strategy.
+
+    Uses a model's rerank capability to semantically reorder multi-path recall results.
+    Unlike RRF/Weighted fusion which score per-path independently, this strategy:
+    1. Merges multi-path recall results (deduplicate)
+    2. Extracts document text
+    3. Calls model rerank API in a single batch
+    4. Returns results sorted by semantic relevance
+
+    Example:
+        >>> from psycopg2.models import create_model
+        >>>
+        >>> model = create_model("cohere", api_key="xxx")
+        >>> fusion = ModelRerankFusion(model=model, query="machine learning")
+        >>>
+        >>> results = client.hybrid_search(
+        ...     "documents",
+        ...     retrievers=[vec_ret, ft_ret],
+        ...     fusion_strategy=fusion
+        ... )
+    """
+
+    _fuse_source = "model_rerank"
+
+    def __init__(
+            self,
+            model: "BaseModel",
+            query: str,
+            text_field: str = "content",
+            fallback_to_rrf: bool = True
+    ):
+        """
+        Args:
+            model: Pre-constructed model instance (must support rerank).
+            query: Query text (used for rerank).
+            text_field: Text field name used for rerank input.
+            fallback_to_rrf: Whether to fall back to RRF if rerank fails.
+        """
+        super().__init__(weights=None)
+
+        self.model = model
+        self.query = query
+        self.text_field = text_field
+        self.fallback_to_rrf = fallback_to_rrf
+
+    def _extract_text(self, data: Dict[str, Any]) -> str:
+        """Extract text from document data."""
+        return data.get(self.text_field, str(data))
+
+    @staticmethod
+    def _update_merged_entry(entry: Dict, result: 'RetrievalResult') -> None:
+        """Update an existing merged entry with a new result.
+
+        Keeps the highest score and merges data fields without
+        overwriting existing ones (consistent with base class
+        ``_accumulate_score``).
+        """
+        if result.score > entry["score"]:
+            entry["score"] = result.score
+        # Merge data without overwriting (consistent with base class)
+        for key, value in result.data.items():
+            if key not in entry["data"]:
+                entry["data"][key] = value
+
+    def _merge_results(self, paths: List[RetrievalPath]) -> Dict[Any, Dict]:
+        """Merge multi-path recall results (deduplicate, keep highest score).
+
+        Data merge follows the same convention as the base class
+        ``_accumulate_score``: new fields are added but existing fields
+        are never overwritten.
+        """
+        merged = {}
+
+        for path in paths:
+            for result in path.results:
+                doc_id = result.id
+
+                if doc_id not in merged:
+                    merged[doc_id] = {
+                        "data": dict(result.data),
+                        "score": result.score,
+                    }
+                else:
+                    self._update_merged_entry(merged[doc_id], result)
+
+        return merged
+
+    def _score_path(self, path: RetrievalPath, weight: float,
+                    score_map: Dict, data_map: Dict):
+        """Not used — ModelRerankFusion overrides fuse() directly."""
+        raise NotImplementedError(
+            "ModelRerankFusion uses model rerank instead of per-path scoring"
+        )
+
+    def fuse(
+            self,
+            paths: List[RetrievalPath],
+            top_k: int = 10
+    ) -> List[RetrievalResult]:
+        """Fuse results using model rerank.
+
+        Overrides the base template method because reranking requires
+        a single batch call across all merged documents.
+
+        Args:
+            paths: Multi-path retrieval results.
+            top_k: Maximum number of results to return.
+
+        Returns:
+            Fused retrieval result list.
+        """
+        if not paths:
+            return []
+
+        # 1. Merge results
+        merged = self._merge_results(paths)
+
+        if not merged:
+            return []
+
+        # 2. Prepare documents
+        doc_ids = list(merged.keys())
+        documents = [self._extract_text(merged[did]["data"]) for did in doc_ids]
+
+        # 3. Call model rerank
+        try:
+            rerank_results = self.model.rerank(
+                query=self.query,
+                documents=documents,
+                top_n=top_k
+            )
+        except Exception as e:
+            logger.warning(f"Model rerank failed: {e}")
+            if self.fallback_to_rrf:
+                logger.info("Falling back to RRF fusion")
+                return RRFFusion(k=60).fuse(paths, top_k)
+            raise
+
+        # 4. Build results (keep data clean, consistent with other fusions)
+        results = []
+        for r in rerank_results:
+            idx = r["index"]
+            doc_id = doc_ids[idx]
+            score = r["score"]
+
+            results.append(RetrievalResult(
+                id=doc_id,
+                score=score,
+                data=merged[doc_id]["data"],
+                source=self._fuse_source
+            ))
+
+        return results[:top_k]
+
+
 # ========== Multi-Path Retrieval Engine ==========
 
 class MultiRetrievalEngine:
@@ -344,12 +503,14 @@ class MultiRetrievalEngine:
         fused_results = self.fusion_strategy.fuse(paths, top_k)
 
         # Convert to dict format
+        # r.data is expanded first so that fusion metadata (id, score, source)
+        # always takes precedence over same-named keys in r.data.
         return [
             {
+                **r.data,
                 'id': r.id,
                 'score': r.score,
                 'source': r.source,
-                **r.data
             }
             for r in fused_results
         ]

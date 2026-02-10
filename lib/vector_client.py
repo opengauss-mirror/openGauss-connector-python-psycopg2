@@ -582,8 +582,9 @@ class MultiRetrieverClient:
             filter_params=filter_params,
             output_columns=output_columns
         )
+        # r.data expanded first; score/source always take precedence
         return [
-            {**r.data, 'score': r.score, 'source': r.source}
+            {**r.data, 'id': r.id, 'score': r.score, 'source': r.source}
             for r in results
         ]
 
