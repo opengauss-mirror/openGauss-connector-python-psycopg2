@@ -9,12 +9,13 @@ Provides vector and full-text retrieval with shared infrastructure:
 Ref: https://docs.opengauss.org/zh/docs/latest/database_reference/datavec_vector_engine_parameters.html
 """
 
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-import logging
 from typing import List, Dict, Any, Optional, Union, Tuple
+
 from psycopg2.extras import RealDictCursor
-from vector_types import DistanceMetric, VectorDataType
+from psycopg2.vector_types import DistanceMetric, VectorDataType
 
 logger = logging.getLogger(__name__)
 
