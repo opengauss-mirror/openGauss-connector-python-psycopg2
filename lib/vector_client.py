@@ -169,6 +169,16 @@ class MultiRetrieverClient:
 
         try:
             self.execute_sql(sql_query, fetch=False)
+            if schema.comment:
+                escaped_comment = schema.comment.replace("'", "''")
+                comment_sql = f'COMMENT ON TABLE "{table_name}" IS \'{escaped_comment}\''
+                self.execute_sql(comment_sql, fetch=False)
+
+            for col in schema.columns:
+                if col.comment:
+                    escaped_col_comment = col.comment.replace("'", "''")
+                    col_comment_sql = f'COMMENT ON COLUMN "{table_name}"."{col.name}" IS \'{escaped_col_comment}\''
+                    self.execute_sql(col_comment_sql, fetch=False)
             logger.info(f"Table '{table_name}' created successfully")
             return True
         except Exception as e:
