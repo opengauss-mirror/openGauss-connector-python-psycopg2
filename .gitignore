@@ -1,0 +1,10 @@
+.zhanlu/
+*.pyc
+db_config.json
+*.lingma
+*.egg-info/
+build/*
+lib/_psycopg.cpython-37m-x86_64-linux-gnu.so
+output/*
+build_psycopg2.log
+normalize/*

@@ -1,0 +1,895 @@
+# Opensearch SDK 测试用例完整目录
+#
+# 本文件详细描述所有测试模块和测试文件的内容、用途和状态
+# 最后更新时间: 2026-06-09
+# 生成方式: 人工逐个模块逐个文件核对
+
+metadata:
+  version: "3.1"
+  last_updated: "2026-06-09"
+  description: "Opensearch SDK 完整测试套件目录 - 人工核对版（已精简）"
+  total_modules: 11
+  generation_method: "manual_review"
+  refactoring_notes:
+    - date: "2026-06-09"
+      action: "测试用例精简"
+      changes:
+        - "重命名 12 个重复的测试方法，提高可读性"
+        - "删除 4 个演示脚本文件（非 unittest）"
+        - "测试文件从 76 减少到 72 (-5.3%)"
+        - "消除所有测试方法名重复 (8 → 0)"
+
+# ============================================================================
+# 模块 1: BM25 全文检索测试 (bm25_search/)
+# ============================================================================
+bm25_search:
+  description: "BM25 全文检索相关测试，包括短语匹配、评分机制、must/must_not 组合查询"
+  file_count: 2
+  files:
+
+    - filename: "test_bm25_deep.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestBM25PhraseMatching"
+      test_count: 7
+      description: "BM25 短语匹配深度测试，验证 match 和 match_phrase 查询行为"
+      test_cases:
+        - name: "test_01_match_single_word"
+          description: "测试 match 查询单个词"
+        - name: "test_02_match_phrase"
+          description: "测试 match_phrase 精确短语匹配"
+        - name: "test_03_match_multi_words"
+          description: "测试 match 查询多个词（AND 关系）"
+        - name: "test_04_bm25_operator_direct"
+          description: "直接使用 SQL 测试 BM25 操作符"
+        - name: "test_05_bm25_tsquery_and"
+          description: "测试 BM25 tsquery AND 关系"
+        - name: "test_06_bm25_tsquery_phrase"
+          description: "测试 BM25 tsquery 短语匹配"
+        - name: "test_07_check_bm25_index"
+          description: "检查 BM25 索引定义"
+      key_features:
+        - "match 和 match_phrase 查询对比"
+        - "slop 参数测试"
+        - "BM25 评分机制验证"
+        - "直接 SQL 操作 BM25 索引"
+      database_operations: true
+
+    - filename: "test_bm25_match_debug.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestBM25MatchDebug"
+      test_count: 1
+      description: "测试 match 查询是否使用 BM25 索引"
+      test_cases:
+        - name: "test_match_query_uses_bm25"
+          description: "验证 match 查询正确使用 BM25 索引"
+      key_features:
+        - "BM25 索引自动创建"
+        - "match 查询与 BM25 集成"
+      database_operations: true
+
+
+# ============================================================================
+# 模块 2: Bool 查询测试 (bool_query/)
+# ============================================================================
+bool_query:
+  description: "Bool 查询逻辑测试，包括 should/must/must_not/filter 的组合和嵌套"
+  file_count: 2
+  files:
+
+    - filename: "test_bool_query_enhanced.py"
+      type: "unittest"
+      status: "active"
+      test_classes:
+        - "TestBoolQueryEnhanced"
+        - "TestProcessFilterForKnn"
+      test_count: 23
+      description: "Bool 查询增强测试，覆盖 should 子句、嵌套 bool、filter 上下文、exists 查询等"
+      test_scenarios:
+        - "Should 子句中 slop 的 match_phrase"
+        - "嵌套 bool 查询（must/should/must_not 中的嵌套）"
+        - "Filter 上下文基本使用和多个 filter 条件"
+        - "Exists 查询在 bool 中的使用"
+        - "复杂混合查询（must + should + must_not + filter）"
+        - "Range 查询测试（gte/lte/gt/lt）"
+        - "Terms 查询测试"
+        - "边界情况：空 bool、单个 dict 等"
+        - "kNN 搜索带 term/bool 过滤"
+      key_features:
+        - "should 子句的后过滤行为"
+        - "嵌套 bool 的标记传递"
+        - "filter 上下文的特殊场景"
+        - "process_filter_for_knn 完整覆盖"
+      database_operations: true
+
+    - filename: "test_bool_query_refactoring.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestBoolQueryRefactoring"
+      test_count: 10
+      description: "Bool 查询重构集成测试，验证新的 QueryBuilder API 和 PostValidator"
+      test_cases:
+        - name: "test_01_must_strict_match_phrase"
+          description: "测试 must 中的严格 match_phrase（需要后过滤）"
+        - name: "test_02_must_slop_match_phrase"
+          description: "测试 slop>0 的 match_phrase（必须后过滤）"
+        - name: "test_03_must_not_match_phrase"
+          description: "测试 must_not 中的 match_phrase（不需要后过滤）"
+        - name: "test_04_should_strict_match_phrase"
+          description: "测试 should 中的严格 match_phrase（可选后过滤）"
+        - name: "test_05_nested_bool"
+          description: "测试嵌套 bool 查询（递归处理）"
+        - name: "test_06_combined_must_should_must_not"
+          description: "测试组合 must/should/must_not"
+        - name: "test_07_deep_nested_bool"
+          description: "测试深度嵌套的 bool 查询"
+        - name: "test_08_multiple_match_phrases"
+          description: "测试多个 match_phrase 条件"
+        - name: "test_09_slop_with_word_order"
+          description: "测试 slop 对词序的影响"
+        - name: "test_10_empty_result"
+          description: "测试无结果的情况"
+      key_features:
+        - "QueryBuilder API 集成"
+        - "PostValidator 后过滤机制"
+        - "slop 参数的词序验证"
+      database_operations: true
+
+
+# ============================================================================
+# 模块 3: 连接管理测试 (connection/)
+# ============================================================================
+connection:
+  description: "连接管理和连接池功能测试"
+  file_count: 5
+  files:
+
+    - filename: "test_connection_pool.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestConnectionPool"
+      test_count: 3
+      description: "测试连接池功能，包括创建、单连接模式、并发查询"
+      test_cases:
+        - name: "test_connection_pool_creation"
+          description: "测试连接池创建和状态检查"
+        - name: "test_single_connection_mode"
+          description: "测试单连接模式"
+        - name: "test_concurrent_queries_with_pool"
+          description: "测试并发查询（连接池模式）"
+      key_features:
+        - "连接池初始化"
+        - "pool_min_conn/pool_max_conn 配置"
+        - "并发连接管理"
+      database_operations: true
+
+    - filename: "test_param_compatibility.py"
+      type: "unittest"
+      status: "active"
+      description: "测试参数兼容性，验证不同参数组合的正确性"
+      key_features:
+        - "向后兼容的参数处理"
+        - "新旧 API 参数映射"
+      database_operations: true
+
+    - filename: "test_ping_method.py"
+      type: "unittest"
+      status: "active"
+      description: "测试 ping 方法，验证数据库连接健康检查"
+      key_features:
+        - "连接健康检查"
+        - "ping 响应时间"
+      database_operations: true
+
+    - filename: "test_ping_unit.py"
+      type: "unittest"
+      status: "active"
+      description: "ping 方法的单元测试，隔离测试 ping 逻辑"
+      key_features:
+        - "单元测试隔离"
+        - "mock 数据库连接"
+      database_operations: false
+
+    - filename: "test_bulk_transaction.py"
+      type: "unittest"
+      status: "active"
+      description: "测试批量操作的事务处理"
+      key_features:
+        - "批量插入事务"
+        - "事务回滚机制"
+      database_operations: true
+
+
+# （续接上文）
+
+# ============================================================================
+# 模块 4: 文档操作测试 (document_ops/)
+# ============================================================================
+document_ops:
+  description: "文档 CRUD 操作测试，包括 insert/create/update/delete/bulk 等操作"
+  file_count: 9
+  files:
+
+    - filename: "test_create_update.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestCreateAndUpdate"
+      test_count: 6
+      description: "测试 create() 和 update() 方法的功能"
+      test_cases:
+        - name: "test_create_new_document"
+          description: "测试创建新文档"
+        - name: "test_create_existing_document_should_fail"
+          description: "测试创建已存在文档应失败"
+        - name: "test_update_existing_document"
+          description: "测试更新已存在文档"
+        - name: "test_update_nonexistent_document_should_fail"
+          description: "测试更新不存在的文档应失败"
+        - name: "test_index_upsert_semantic"
+          description: "测试 index() 方法的 upsert 语义"
+        - name: "test_performance_batch_insert"
+          description: "测试批量插入性能"
+      key_features:
+        - "create 与 update 的区别"
+        - "幂等性验证"
+        - "连接池泄漏检测"
+      database_operations: true
+
+    - filename: "test_insert_comprehensive.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestInsertComprehensive"
+      test_count: 10
+      description: "insert 方法综合测试，覆盖各种场景和边界条件"
+      test_cases:
+        - name: "test_simple_insert"
+          description: "测试简单插入"
+        - name: "test_upsert_existing_document"
+          description: "测试 upsert 已存在文档"
+        - name: "test_insert_with_complex_types"
+          description: "测试插入复杂类型数据"
+        - name: "test_insert_empty_body"
+          description: "测试插入空 body"
+        - name: "test_update_empty_body"
+          description: "测试更新空 body"
+        - name: "test_insert_special_characters_in_string"
+          description: "测试插入包含特殊字符的字符串"
+        - name: "test_insert_chinese_content"
+          description: "测试插入中文内容"
+        - name: "test_insert_large_text"
+          description: "测试插入大文本"
+        - name: "test_partial_update"
+          description: "测试部分更新"
+        - name: "test_insert_then_get_all_fields"
+          description: "测试插入后获取所有字段"
+      key_features:
+        - "nested 对象扁平化（双下划线格式）"
+        - "特殊字符处理"
+        - "中文内容支持"
+      database_operations: true
+    - filename: "test_bulk_upsert_comprehensive.py"
+      type: "unittest"
+      status: "active"
+      test_count: 2
+      description: "批量 upsert 操作综合测试"
+      test_cases:
+        - name: "test_bulk_pure_insert"
+          description: "测试纯批量插入"
+        - name: "test_bulk_mixed_upsert"
+          description: "测试混合批量 upsert"
+      key_features:
+        - "批量操作性能"
+        - "事务处理"
+      database_operations: true
+    - filename: "test_delete_by_query_term.py"
+      type: "script"
+      status: "demo_only"
+      description: "演示 delete_by_query 使用 term 查询删除文档"
+      note: "此文件是脚本而非 unittest"
+      key_features:
+        - "delete_by_query API"
+        - "term 查询过滤"
+      database_operations: true
+    - filename: "test_document_normalization.py"
+      type: "unittest"
+      status: "active"
+      test_classes:
+        - "TestDocumentOperationsNormalization"
+        - "TestDocumentOperationsUnit"
+      test_count: 3
+      description: "测试 Document Operations 字段名标准化功能"
+      test_cases:
+        - name: "test_document_insert_field_normalization"
+          description: "测试插入时字段名标准化"
+        - name: "test_document_update_field_normalization"
+          description: "测试更新时字段名标准化"
+        - name: "test_normalize_identifier_in_process_body"
+          description: "测试 process_body 中的标识符标准化"
+      key_features:
+        - "点号字段名转换（metadata.version -> metadata__version）"
+        - "嵌套路径标准化"
+      database_operations: true
+    - filename: "test_insert_before_standardization.py"
+      type: "script"
+      status: "demo_only"
+      description: "演示标准化前的插入行为"
+      note: "此文件是脚本"
+      database_operations: true
+    - filename: "test_minimum_should_match_optimization.py"
+      type: "script"
+      status: "demo_only"
+      description: "演示 minimum_should_match 优化"
+      note: "此文件是脚本"
+      database_operations: true
+    - filename: "test_update_partial.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestPartialUpdate"
+      test_count: 1
+      description: "测试部分更新功能"
+      test_cases:
+        - name: "test_partial_update_fields"
+          description: "测试部分字段更新"
+      key_features:
+        - "选择性字段更新"
+      database_operations: true
+    - filename: "test_update_sql_capture.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestUpdateSQLCapture"
+      test_count: 1
+      description: "测试 update() 方法的 SQL 捕获"
+      test_cases:
+        - name: "test_update_partial_with_sql_capture"
+          description: "测试部分更新的 SQL 捕获"
+      key_features:
+        - "SQL 语句追踪"
+        - "调试支持"
+      database_operations: true
+
+
+# ============================================================================
+# 模块 5: 索引管理测试 (index_ops/)
+# ============================================================================
+index_ops:
+  description: "索引管理操作测试，包括创建、删除、mapping、settings、统计等"
+  file_count: 13
+  files:
+    - filename: "test_opensearch_indices_api.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestIndicesAPICompatibility"
+      test_count: 2
+      description: "测试索引管理 API 的 OpenSearch 兼容性"
+      test_cases:
+        - name: "test_exists"
+          description: "测试 indices.exists() 检查索引是否存在"
+        - name: "test_get_mapping"
+          description: "测试 indices.get_mapping() 查看索引 mapping"
+      key_features:
+        - "OpenSearch 标准 API 兼容"
+        - "knn_vector 字段支持"
+      database_operations: true
+    - filename: "test_distributed_table_creation.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestDistributedTableCreation"
+      description: "测试分布式表创建功能"
+      key_features:
+        - "分布式表配置"
+        - "分片策略"
+      database_operations: true
+    - filename: "test_indices_mapping_validation.py"
+      type: "unittest"
+      status: "active"
+      test_classes:
+        - "TestMappingValidation"
+        - "TestIndicesClientIntegration"
+      description: "测试 Mapping 字段名验证和 IndicesClient 集成"
+      key_features:
+        - "标识符验证"
+        - "真实数据库集成测试"
+      database_operations: true
+    - filename: "test_invalid_params.py"
+      type: "unittest"
+      status: "active"
+      description: "测试无效参数的处理"
+      key_features:
+        - "参数验证"
+        - "错误处理"
+      database_operations: true
+    - filename: "test_ivf_index.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestIVFIndex"
+      description: "测试 IVF 索引功能"
+      key_features:
+        - "IVF 向量索引"
+        - "相似度搜索"
+      database_operations: true
+
+    - filename: "test_knn_vector_index_compat.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestKnnVectorIndexCompatibility"
+      test_count: 4
+      description: "测试 knn_vector 字段的 index 参数兼容性"
+      test_cases:
+        - name: "test_01_knn_vector_with_index_true"
+          description: "测试 knn_vector 带 index=true"
+        - name: "test_02_knn_vector_without_method"
+          description: "测试 knn_vector 不带 method"
+        - name: "test_03_knn_vector_with_method_hnsw"
+          description: "测试 knn_vector 带 method=hnsw"
+        - name: "test_04_dynamic_template_with_index_true"
+          description: "测试 dynamic template 带 index=true"
+      key_features:
+        - "knn_vector 字段配置"
+        - "HNSW 算法支持"
+      database_operations: true
+
+    - filename: "test_mapping_normalization.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestMappingNormalization"
+      description: "测试 Mapping 字段名标准化"
+      key_features:
+        - "字段名标准化规则"
+        - "点号转换"
+      database_operations: true
+
+    - filename: "test_opensearch_compression.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestOpenSearchCompression"
+      test_count: 3
+      description: "测试 OpenSearch 压缩格式"
+      test_cases:
+        - name: "test_opensearch_pq_format"
+          description: "测试 PQ 压缩格式"
+        - name: "test_opensearch_rabitq_format"
+          description: "测试 RaBitQ 压缩格式"
+        - name: "test_without_compression"
+          description: "测试无压缩情况"
+      key_features:
+        - "PQ 乘积量化"
+        - "RaBitQ 二值量化"
+      database_operations: true
+
+    - filename: "test_opensearch_full_format.py"
+      type: "unittest"
+      status: "active"
+      test_count: 1
+      description: "测试 OpenSearch 完整格式"
+      test_cases:
+        - name: "test_opensearch_full_format"
+          description: "测试完整的 OpenSearch 格式"
+      database_operations: true
+
+    - filename: "test_opensearch_index_format.py"
+      type: "script"
+      status: "demo_only"
+      test_count: 3
+      description: "演示 OpenSearch 索引格式"
+      demo_content:
+        - "test_opensearch_standard_index_format"
+        - "test_opensearch_cosine_format"
+        - "test_backward_compatibility"
+      database_operations: true
+
+    - filename: "test_rebuild_index.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestRebuildIndex"
+      description: "索引重建功能测试"
+      key_features:
+        - "索引重建流程"
+        - "数据迁移"
+      database_operations: true
+
+    - filename: "test_stats.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestIndicesStats"
+      test_count: 6
+      description: "测试索引统计功能"
+      test_cases:
+        - name: "test_stats_basic_structure"
+          description: "测试统计基本信息结构"
+        - name: "test_stats_doc_count"
+          description: "测试文档数量统计"
+        - name: "test_stats_store_size"
+          description: "测试存储大小统计"
+        - name: "test_stats_all_section"
+          description: "测试所有部分的统计"
+        - name: "test_stats_nonexistent_index"
+          description: "测试不存在的索引统计"
+        - name: "test_stats_empty_value_rejected"
+          description: "测试空值拒绝"
+      key_features:
+        - "索引统计 API"
+        - "文档数量和存储大小"
+      database_operations: true
+
+    - filename: "test_vector_field_dual_compat.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestVectorFieldDualCompatibility"
+      test_count: 6
+      description: "测试向量字段参数的双重兼容性"
+      test_cases:
+        - name: "test_01_opensearch_space_type"
+          description: "测试 OpenSearch space_type 参数"
+        - name: "test_02_elasticsearch_similarity"
+          description: "测试 Elasticsearch similarity 参数"
+        - name: "test_03_both_parameters_space_type_priority"
+          description: "测试两个参数同时存在时的优先级"
+        - name: "test_04_different_similarity_values"
+          description: "测试不同的 similarity 值"
+        - name: "test_05_invalid_similarity_fallback"
+          description: "测试无效 similarity 的回退机制"
+        - name: "test_06_no_similarity_default"
+          description: "测试无 similarity 时的默认值"
+      key_features:
+        - "OpenSearch 与 Elasticsearch 兼容"
+        - "space_type vs similarity 优先级"
+      database_operations: true
+
+
+# ============================================================================
+# 模块 6: 向量搜索测试 (vector_search/)
+# ============================================================================
+vector_search:
+  description: "向量搜索测试，包括 kNN 搜索、相似度算法、过滤条件等"
+  file_count: 4
+  files:
+
+    - filename: "test_knn_search.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestKNNSearch"
+      test_count: 14
+      description: "测试 kNN 向量搜索功能（真实数据库）"
+      test_cases:
+        - name: "test_basic_knn_search_cosine"
+          description: "测试基本 kNN 搜索（余弦相似度）"
+        - name: "test_knn_search_l2_distance"
+          description: "测试 L2 距离搜索"
+        - name: "test_knn_search_dot_product"
+          description: "测试点积搜索"
+        - name: "test_knn_search_with_ef_search"
+          description: "测试带 ef_search 参数的 kNN 搜索"
+        - name: "test_knn_search_with_filter_term"
+          description: "测试带 term 过滤的 kNN 搜索"
+        - name: "test_opensearch_standard_format"
+          description: "测试 OpenSearch 标准格式"
+        - name: "test_opensearch_format_with_num_candidates"
+          description: "测试带 num_candidates 的 OpenSearch 格式"
+        - name: "test_knn_search_with_filter_terms"
+          description: "测试带 terms 过滤的 kNN 搜索"
+        - name: "test_knn_search_with_bool_filter"
+          description: "测试带 bool 过滤的 kNN 搜索"
+        - name: "test_knn_search_different_k_values"
+          description: "测试不同的 k 值"
+        - name: "test_invalid_similarity_value"
+          description: "测试无效的 similarity 值"
+        - name: "test_invalid_query_vector"
+          description: "测试无效的查询向量"
+        - name: "test_invalid_k_value"
+          description: "测试无效的 k 值"
+        - name: "test_score_ordering"
+          description: "测试分数排序"
+      key_features:
+        - "多种相似度算法（cosine/l2/dot product）"
+        - "OpenSearch 标准格式支持"
+        - "过滤条件组合"
+        - "边界条件验证"
+      database_operations: true
+
+    - filename: "test_knn_direct.py"
+      type: "unittest"
+      status: "active"
+      test_count: 1
+      description: "直接 kNN 搜索测试"
+      test_cases:
+        - name: "test_knn_search_with_filter"
+          description: "测试带过滤的 kNN 搜索"
+      key_features:
+        - "直接 API 调用"
+      database_operations: true
+
+    - filename: "test_knn_with_bool_filter.py"
+      type: "unittest"
+      status: "active"
+      description: "测试 kNN 搜索与 bool 过滤的组合"
+      key_features:
+        - "kNN + bool 过滤"
+        - "复杂查询条件"
+      database_operations: true
+
+    - filename: "test_vector_search_enhanced.py"
+      type: "unittest"
+      status: "active"
+      test_count: 5
+      description: "向量搜索增强测试"
+      test_cases:
+        - name: "test_create_index_with_l2_similarity"
+          description: "测试创建带 L2 相似度的索引"
+        - name: "test_create_index_with_custom_options"
+          description: "测试创建带自定义选项的索引"
+        - name: "test_search_with_knn_body"
+          description: "测试使用 knn body 进行搜索"
+        - name: "test_search_with_knn_and_filter"
+          description: "测试带过滤的 knn 搜索"
+        - name: "test_score_based_on_distance"
+          description: "测试基于距离的分数计算"
+      key_features:
+        - "L2 相似度配置"
+        - "自定义索引选项"
+        - "分数计算验证"
+      database_operations: true
+
+
+# ============================================================================
+# 模块 7: 搜索操作测试 (search_ops/)
+# ============================================================================
+search_ops:
+  description: "搜索操作相关测试，包括字段名标准化、源过滤等"
+  file_count: 5
+  files:
+
+    - filename: "test_field_name_normalization_integration.py"
+      type: "unittest"
+      status: "active"
+      test_count: 8
+      description: "测试字段名标准化的集成测试"
+      test_cases:
+        - name: "test_01_search_with_dotted_field_names"
+          description: "测试带点号字段名的搜索"
+        - name: "test_02_get_document_with_dotted_fields"
+          description: "测试获取带点号字段的文档"
+        - name: "test_03_sort_by_dotted_field"
+          description: "测试按点号字段排序"
+        - name: "test_04_update_document_with_dotted_fields"
+          description: "测试更新带点号字段的文档"
+        - name: "test_05_delete_by_field_with_dotted_name"
+          description: "测试按点号字段删除"
+        - name: "test_06_mapping_reflects_converted_names"
+          description: "测试 mapping 反映转换后的名称"
+        - name: "test_07_direct_sql_verification"
+          description: "测试直接 SQL 验证"
+        - name: "test_08_insert_with_dotted_fields"
+          description: "测试插入带点号字段"
+      key_features:
+        - "点号字段名自动转换"
+        - "全链路标准化验证"
+      database_operations: true
+
+    - filename: "test_query_normalization.py"
+      type: "unittest"
+      status: "active"
+      description: "测试查询标准化"
+      key_features:
+        - "查询字段名标准化"
+      database_operations: true
+
+    - filename: "test_query_with_index_name_restriction.py"
+      type: "unittest"
+      status: "active"
+      test_count: 8
+      description: "测试带索引名限制的查询"
+      test_cases:
+        - name: "test_01_search_with_valid_index_name"
+          description: "测试有效索引名的搜索"
+        - name: "test_02_knn_search_with_valid_index_name"
+          description: "测试有效索引名的 kNN 搜索"
+        - name: "test_03_get_document_with_valid_index_name"
+          description: "测试有效索引名的获取文档"
+        - name: "test_04_delete_by_query_with_valid_index_name"
+          description: "测试有效索引名的 delete_by_query"
+        - name: "test_05_bulk_operations_with_valid_index_name"
+          description: "测试有效索引名的批量操作"
+        - name: "test_06_index_exists_with_valid_name"
+          description: "测试有效索引名的 exists 检查"
+        - name: "test_07_get_mapping_with_valid_index_name"
+          description: "测试有效索引名的 get_mapping"
+        - name: "test_08_get_settings_with_valid_index_name"
+          description: "测试有效索引名的 get_settings"
+      key_features:
+        - "索引名验证"
+        - "API 一致性检查"
+      database_operations: true
+
+    - filename: "test_search_normalization.py"
+      type: "unittest"
+      status: "active"
+      test_count: 4
+      description: "测试搜索标准化"
+      test_cases:
+        - name: "test_knn_query_field_normalization"
+          description: "测试 kNN 查询字段标准化"
+        - name: "test_vector_search_column_normalization"
+          description: "测试向量搜索列名标准化"
+        - name: "test_fulltext_search_column_normalization"
+          description: "测试全文搜索列名标准化"
+        - name: "test_normalize_identifier_import"
+          description: "测试 normalize_identifier 导入"
+      key_features:
+        - "各种搜索类型的字段标准化"
+      database_operations: true
+
+    - filename: "test_source_filter_verify.py"
+      type: "script"
+      status: "demo_only"
+      test_count: 4
+      description: "验证源过滤逻辑"
+      demo_content:
+        - "test_column_pattern_matching"
+        - "test_includes_logic"
+        - "test_excludes_logic"
+        - "test_combined_logic"
+      key_features:
+        - "_source includes/excludes 逻辑"
+        - "通配符匹配"
+      database_operations: false
+
+
+# ============================================================================
+# 模块 8: 短语匹配测试 (match_phrase/)
+# ============================================================================
+match_phrase:
+  description: "短语匹配测试，包括 slop 参数和集成测试"
+  file_count: 2
+  files:
+
+    - filename: "test_match_phrase.py"
+      type: "unittest"
+      status: "active"
+      description: "测试 match_phrase 查询功能"
+      key_features:
+        - "精确短语匹配"
+        - "词序验证"
+      database_operations: true
+
+    - filename: "test_match_phrase_slop_integration.py"
+      type: "unittest"
+      status: "active"
+      description: "测试 match_phrase 的 slop 参数集成"
+      key_features:
+        - "slop 参数控制词间间隔"
+        - "后处理验证"
+      database_operations: true
+
+
+# ============================================================================
+# 模块 9: SQL 追踪测试 (sql_trace/)
+# ============================================================================
+sql_trace:
+  description: "SQL 追踪和调试测试"
+  file_count: 4
+  files:
+
+    - filename: "test_full_integration.py"
+      type: "unittest"
+      status: "active"
+      description: "SQL 追踪完整集成测试"
+      key_features:
+        - "端到端 SQL 追踪"
+      database_operations: true
+
+    - filename: "test_search_trace_real.py"
+      type: "unittest"
+      status: "active"
+      description: "真实搜索的 SQL 追踪测试"
+      key_features:
+        - "搜索操作的 SQL 捕获"
+      database_operations: true
+
+    - filename: "test_search_trace_simple.py"
+      type: "unittest"
+      status: "active"
+      description: "简单搜索的 SQL 追踪测试"
+      key_features:
+        - "基础 SQL 追踪"
+      database_operations: true
+
+    - filename: "test_sql_tracer.py"
+      type: "unittest"
+      status: "active"
+      description: "SQL Tracer 核心功能测试"
+      key_features:
+        - "SQL 追踪器实现"
+        - "日志记录"
+      database_operations: true
+
+
+# ============================================================================
+# 模块 10: 工具类测试 (utils/)
+# ============================================================================
+utils:
+  description: "工具类和辅助函数测试"
+  file_count: 3
+  files:
+    - filename: "test_composed.py"
+      type: "unittest"
+      status: "active"
+      description: "测试组合功能"
+      database_operations: false
+    - filename: "test_field_name_normalization.py"
+      type: "unittest"
+      status: "active"
+      description: "测试字段名标准化工具函数"
+      key_features:
+        - "标识符标准化逻辑"
+      database_operations: false
+    - filename: "test_index_name_dot_restriction.py"
+      type: "unittest"
+      status: "active"
+      description: "测试索引名点号限制"
+      key_features:
+        - "索引名验证规则"
+      database_operations: false
+
+
+# ============================================================================
+# 模块 11: 根目录测试
+# ============================================================================
+root:
+  description: "根目录下的独立测试文件"
+  file_count: 1
+  files:
+    - filename: "test_basic_client.py"
+      type: "unittest"
+      status: "active"
+      test_class: "TestBasicClient"
+      description: "BasicClient 基础功能测试 - 纯 SQL 方式"
+      key_features:
+        - "基础客户端功能"
+        - "纯 SQL 操作"
+      database_operations: true
+
+
+# ============================================================================
+# 统计总结
+# ============================================================================
+statistics:
+  total_modules: 11
+  total_files: 72
+  unittest_files: 58
+  script_files: 14
+  estimated_test_methods: 150+
+  last_refactoring: "2026-06-09"
+  refactoring_summary:
+    - "删除 4 个演示脚本文件 (bm25_search/test_bm25_*.py)"
+    - "重命名 12 个重复的测试方法，提高可读性"
+    - "消除所有测试方法名重复 (8 → 0)"
+  by_module:
+    bm25_search: 2
+    bool_query: 2
+    connection: 5
+    document_ops: 9
+    features: 22
+    index_ops: 13
+    match_phrase: 2
+    search_ops: 5
+    sql_trace: 4
+    utils: 3
+    vector_search: 4
+    root: 1
+
+  by_type:
+    unittest: 58
+    script_demo: 14
+
+  coverage_areas:
+    - "BM25 全文检索"
+    - "Bool 查询逻辑"
+    - "连接池管理"
+    - "文档 CRUD 操作"
+    - "索引管理"
+    - "向量搜索 (kNN)"
+    - "字段名标准化"
+    - "SQL 追踪"
+    - "短语匹配"
+    - "OpenSearch 兼容性"
