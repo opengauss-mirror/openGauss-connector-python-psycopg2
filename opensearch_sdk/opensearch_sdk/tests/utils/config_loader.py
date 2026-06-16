@@ -40,7 +40,7 @@ def find_db_config(start_dir=None):
             start_dir = os.path.dirname(os.path.abspath(__file__))
     
     current_dir = start_dir
-    max_levels = 5
+    max_levels = 10
     
     for _ in range(max_levels):
         config_path = os.path.join(current_dir, 'db_config.json')

@@ -20,7 +20,7 @@ import warnings
 from pathlib import Path
 
 # 添加项目根目录到路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
 
 from opensearch_sdk.tests.utils.config_loader import load_db_config
 from opensearch_sdk import OpenGauss
