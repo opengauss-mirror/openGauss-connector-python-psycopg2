@@ -69,6 +69,8 @@ from psycopg2._range import (                               # noqa
 # Expose ipaddress-related objects
 from psycopg2._ipaddress import register_ipaddress          # noqa
 
+_GUC_NAME_RE = _re.compile(r'^[A-Za-z_][A-Za-z0-9_.]*$')
+
 
 class DictCursorBase(_cursor):
     """Base class for all dict-like cursors."""
@@ -1321,9 +1323,11 @@ def init_worker(scan_params, db_config):
         _conn.autocommit = True
         _cur = _conn.cursor()
 
-        sql_lines = [f"SET {k} = {v};"
-            for k, v in scan_params.items()]
-        _cur.execute(" ".join(sql_lines))
+        for k, v in scan_params.items():
+            if not isinstance(k, str) or not _GUC_NAME_RE.match(k):
+                raise ValueError(f"invalid scan parameter name: {k!r}")
+            _cur.execute("SELECT pg_catalog.set_config(%s, %s, false)",
+                         (k, str(v)))
         atexit.register(close_connection)
         conn_pool_init_status[_os.getpid()] = (True, "")
     except Exception as e:

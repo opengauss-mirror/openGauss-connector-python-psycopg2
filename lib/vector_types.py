@@ -9,6 +9,24 @@ from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass, field
 
 
+def _quote_identifier(name: str) -> str:
+    """Quote a SQL identifier without requiring a live database connection."""
+    if not isinstance(name, str) or not name:
+        raise ValueError("identifier must be a non-empty string")
+    if "\x00" in name:
+        raise ValueError("identifier must not contain NUL bytes")
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _validate_partial_index_where(where: str) -> str:
+    """Reject multi-statement/comment payloads in a partial index predicate."""
+    if not isinstance(where, str) or not where.strip():
+        raise ValueError("partial index condition must be a non-empty string")
+    if any(token in where for token in (";", "--", "/*", "*/")):
+        raise ValueError("partial index condition must not contain SQL comments or statement separators")
+    return where
+
+
 class ColumnType(Enum):
     """Column type enumeration"""
     INTEGER = "INTEGER"
@@ -345,8 +363,8 @@ class IndexConfig:
     def _column_str(self) -> str:
         """Format column name(s) for SQL."""
         if isinstance(self.column, str):
-            return f'"{self.column}"'
-        return ", ".join(f'"{c}"' for c in self.column)
+            return _quote_identifier(self.column)
+        return ", ".join(_quote_identifier(c) for c in self.column)
 
     def _require_metric(self) -> None:
         """Raise if metric is not set (required for vector indexes)."""
@@ -448,14 +466,14 @@ class IndexConfig:
         sql_parts = ["CREATE"]
         if self.unique:
             sql_parts.append("UNIQUE")
-        sql_parts.extend(["INDEX", f'"{self.name}"', f'ON "{table_name}"'])
+        sql_parts.extend(["INDEX", _quote_identifier(self.name), "ON", _quote_identifier(table_name)])
 
         # Dispatch to the appropriate builder, or fall back to generic
         builder = self._INDEX_BUILDERS.get(self.index_type, IndexConfig._build_generic)
         sql_parts.append(builder(self))
 
         if self.where:
-            sql_parts.append(f"WHERE {self.where}")
+            sql_parts.append(f"WHERE {_validate_partial_index_where(self.where)}")
 
         return " ".join(sql_parts)
 
@@ -475,7 +493,11 @@ class IndexConfig:
             ALTER TABLE SQL string, or None if not needed
         """
         if self.parallel_workers is not None:
-            return f'ALTER TABLE "{table_name}" SET(parallel_workers={self.parallel_workers})'
+            if not isinstance(self.parallel_workers, int):
+                raise ValueError("parallel_workers must be an integer")
+            if self.parallel_workers < 1 or self.parallel_workers > 32:
+                raise ValueError("parallel_workers must be between 1 and 32")
+            return f'ALTER TABLE {_quote_identifier(table_name)} SET(parallel_workers={self.parallel_workers})'
         return None
 
 
