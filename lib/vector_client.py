@@ -122,6 +122,9 @@ class MultiRetrieverClient:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
         try:
+            if hasattr(query, 'as_string'):
+                query = query.as_string(cursor)
+
             cursor.execute(query, params)
 
             if fetch and cursor.description:
@@ -201,14 +204,11 @@ class MultiRetrieverClient:
         Returns:
             Whether deletion was successful
         """
-        sql_parts = ["DROP TABLE"]
-        if if_exists:
-            sql_parts.append("IF EXISTS")
-        sql_parts.append(f'"{table_name}"')
-        if cascade:
-            sql_parts.append("CASCADE")
-
-        sql_query = " ".join(sql_parts)
+        sql_query = sql.SQL('DROP TABLE {}{}{}').format(
+            sql.SQL('IF EXISTS ') if if_exists else sql.SQL(''),
+            sql.Identifier(table_name),
+            sql.SQL(' CASCADE') if cascade else sql.SQL('')
+        )
 
         try:
             self.execute_sql(sql_query, fetch=False)
@@ -330,14 +330,11 @@ class MultiRetrieverClient:
         Returns:
             Whether deletion was successful
         """
-        sql_parts = ["DROP INDEX"]
-        if if_exists:
-            sql_parts.append("IF EXISTS")
-        sql_parts.append(f'"{index_name}"')
-        if cascade:
-            sql_parts.append("CASCADE")
-
-        sql_query = " ".join(sql_parts)
+        sql_query = sql.SQL('DROP INDEX {}{}{}').format(
+            sql.SQL('IF EXISTS ') if if_exists else sql.SQL(''),
+            sql.Identifier(index_name),
+            sql.SQL(' CASCADE') if cascade else sql.SQL('')
+        )
 
         try:
             self.execute_sql(sql_query, fetch=False)
