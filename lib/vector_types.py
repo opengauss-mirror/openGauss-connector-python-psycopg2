@@ -9,6 +9,10 @@ from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass, field
 
 
+PARALLEL_WORKERS_MIN = 1
+PARALLEL_WORKERS_MAX = 32
+
+
 def _quote_identifier(name: str) -> str:
     """Quote a SQL identifier without requiring a live database connection."""
     if not isinstance(name, str) or not name:
@@ -495,8 +499,11 @@ class IndexConfig:
         if self.parallel_workers is not None:
             if not isinstance(self.parallel_workers, int):
                 raise ValueError("parallel_workers must be an integer")
-            if self.parallel_workers < 1 or self.parallel_workers > 32:
-                raise ValueError("parallel_workers must be between 1 and 32")
+            if (self.parallel_workers < PARALLEL_WORKERS_MIN or
+                    self.parallel_workers > PARALLEL_WORKERS_MAX):
+                raise ValueError(
+                    "parallel_workers must be between "
+                    f"{PARALLEL_WORKERS_MIN} and {PARALLEL_WORKERS_MAX}")
             return f'ALTER TABLE {_quote_identifier(table_name)} SET(parallel_workers={self.parallel_workers})'
         return None
 
