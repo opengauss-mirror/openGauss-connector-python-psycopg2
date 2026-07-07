@@ -9,11 +9,84 @@ import time
 import unittest
 
 import psycopg2
+import psycopg2.extras as extras_mod
 from psycopg2.extras import (init_worker, close_connection, execute_single,
     execute_multi_search, init_conn_pool, close_conn_pool)
 
 from . import testutils
 from .testutils import ConnectingTestCase
+
+
+class MultiSearchLimitUnitTests(unittest.TestCase):
+    """Tests for multi-search resource limits that don't require a database."""
+
+    def setUp(self):
+        self._saved_env = {}
+        self._env_names = (
+            extras_mod._MULTI_SEARCH_MAX_WORKERS_ENV,
+            extras_mod._MULTI_SEARCH_MAX_ARGS_ENV,
+            extras_mod._MULTI_SEARCH_ARGS_PER_WORKER_ENV,
+            extras_mod._MULTI_SEARCH_ROWS_PER_QUERY_ENV,
+        )
+        for name in self._env_names:
+            self._saved_env[name] = os.environ.get(name)
+            os.environ.pop(name, None)
+
+    def tearDown(self):
+        for name, value in self._saved_env.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+    def test_default_and_env_limits(self):
+        self.assertEqual(extras_mod._get_multi_search_max_workers(), 8)
+        self.assertEqual(extras_mod._get_multi_search_max_args(2), 256)
+        self.assertEqual(extras_mod._get_multi_search_rows_per_query(), 256)
+
+        os.environ[extras_mod._MULTI_SEARCH_MAX_WORKERS_ENV] = '2'
+        os.environ[extras_mod._MULTI_SEARCH_ARGS_PER_WORKER_ENV] = '3'
+        os.environ[extras_mod._MULTI_SEARCH_ROWS_PER_QUERY_ENV] = '4'
+        self.assertEqual(extras_mod._get_multi_search_max_workers(), 2)
+        self.assertEqual(extras_mod._get_multi_search_max_args(2), 6)
+        self.assertEqual(extras_mod._get_multi_search_rows_per_query(), 4)
+
+        os.environ[extras_mod._MULTI_SEARCH_MAX_ARGS_ENV] = '5'
+        self.assertEqual(extras_mod._get_multi_search_max_args(2), 5)
+
+    def test_invalid_env_limit(self):
+        os.environ[extras_mod._MULTI_SEARCH_MAX_ARGS_ENV] = '0'
+        with self.assertRaises(ValueError):
+            extras_mod._get_multi_search_max_args(2)
+
+        os.environ[extras_mod._MULTI_SEARCH_MAX_ARGS_ENV] = 'abc'
+        with self.assertRaises(ValueError):
+            extras_mod._get_multi_search_max_args(2)
+
+    def test_fetch_limited_rows(self):
+        class FakeCursor(object):
+            def __init__(self, batches):
+                self._batches = list(batches)
+
+            def fetchmany(self, size=None):
+                if self._batches:
+                    return self._batches.pop(0)
+                return []
+
+        rows = extras_mod._fetch_limited_rows(
+            FakeCursor([[(1,)], [(2,)]]), 2)
+        self.assertEqual(rows, [(1,), (2,)])
+
+        with self.assertRaises(extras_mod._MultiSearchResultLimitError):
+            extras_mod._fetch_limited_rows(
+                FakeCursor([[(1,)], [(2,)], [(3,)]]), 2)
+
+    def test_execute_multi_search_rejects_large_args_before_pool(self):
+        os.environ[extras_mod._MULTI_SEARCH_MAX_ARGS_ENV] = '1'
+        sql_template = "SELECT * FROM test_table1 ORDER BY embedding <-> %s LIMIT %s;"
+        argslist = [('[1,1,1]', 1), ('[2,2,3]', 1)]
+        with self.assertRaises(ValueError):
+            execute_multi_search(None, None, sql_template, argslist, {}, 2)
 
 
 class ConnectInfo:

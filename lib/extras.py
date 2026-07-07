@@ -70,6 +70,71 @@ from psycopg2._range import (                               # noqa
 from psycopg2._ipaddress import register_ipaddress          # noqa
 
 
+_DEFAULT_MULTI_SEARCH_MAX_WORKERS = 8
+_DEFAULT_MULTI_SEARCH_ARGS_PER_WORKER = 128
+_DEFAULT_MULTI_SEARCH_ROWS_PER_QUERY = 256
+_MULTI_SEARCH_FETCH_SIZE = 64
+
+_MULTI_SEARCH_MAX_WORKERS_ENV = 'PSYCOPG2_MULTI_SEARCH_MAX_WORKERS'
+_MULTI_SEARCH_MAX_ARGS_ENV = 'PSYCOPG2_MULTI_SEARCH_MAX_ARGS'
+_MULTI_SEARCH_ARGS_PER_WORKER_ENV = (
+    'PSYCOPG2_MULTI_SEARCH_MAX_ARGS_PER_WORKER')
+_MULTI_SEARCH_ROWS_PER_QUERY_ENV = (
+    'PSYCOPG2_MULTI_SEARCH_MAX_ROWS_PER_QUERY')
+
+
+class _MultiSearchResultLimitError(RuntimeError):
+    pass
+
+
+def _get_positive_int_env(name, default):
+    value = _os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        limit = int(value)
+    except ValueError:
+        raise ValueError("%s must be a positive integer" % name)
+    if limit <= 0:
+        raise ValueError("%s must be a positive integer" % name)
+    return limit
+
+
+def _get_multi_search_max_workers():
+    return _get_positive_int_env(
+        _MULTI_SEARCH_MAX_WORKERS_ENV,
+        _DEFAULT_MULTI_SEARCH_MAX_WORKERS)
+
+
+def _get_multi_search_max_args(max_workers):
+    max_args = _os.environ.get(_MULTI_SEARCH_MAX_ARGS_ENV)
+    if max_args is not None:
+        return _get_positive_int_env(_MULTI_SEARCH_MAX_ARGS_ENV, None)
+    return (
+        max_workers *
+        _get_positive_int_env(
+            _MULTI_SEARCH_ARGS_PER_WORKER_ENV,
+            _DEFAULT_MULTI_SEARCH_ARGS_PER_WORKER))
+
+
+def _get_multi_search_rows_per_query():
+    return _get_positive_int_env(
+        _MULTI_SEARCH_ROWS_PER_QUERY_ENV,
+        _DEFAULT_MULTI_SEARCH_ROWS_PER_QUERY)
+
+
+def _fetch_limited_rows(cursor, row_limit):
+    rows = []
+    while True:
+        batch = cursor.fetchmany(_MULTI_SEARCH_FETCH_SIZE)
+        if not batch:
+            return rows
+        rows.extend(batch)
+        if len(rows) > row_limit:
+            raise _MultiSearchResultLimitError(
+                "Query result exceeded the supported row limit.")
+
+
 class DictCursorBase(_cursor):
     """Base class for all dict-like cursors."""
 
@@ -1399,9 +1464,12 @@ def execute_single(local_argslist, sql_template):
         local_res.append([("ERROR", "cursor is None.")])
         return local_res
     try:
+        row_limit = _get_multi_search_rows_per_query()
         for args in local_argslist:
             _cur.execute(sql_template, args)
-            local_res.append(_cur.fetchall())
+            local_res.append(_fetch_limited_rows(_cur, row_limit))
+    except _MultiSearchResultLimitError:
+        raise
     except Exception as e:
         print(f"Search failed: {e}")
         local_res.append([("ERROR", str(e))])
@@ -1416,27 +1484,45 @@ def execute_multi_search(db_config, conn_pool_mgr, sql_template, argslist, scan_
         raise ValueError("Query parameters must not be empty")
     if max_workers is None:
         max_workers = multiprocessing.cpu_count()
+    if max_workers <= 0:
+        raise ValueError("max_workers must be a positive integer")
+    worker_limit = _get_multi_search_max_workers()
+    max_workers = min(max_workers, worker_limit)
     if conn_pool_mgr is None:
         max_workers = min(max_workers, total_size)
+    else:
+        max_workers = min(conn_pool_mgr.conn_pool._processes, worker_limit)
+
+    max_args = _get_multi_search_max_args(max_workers)
+    if total_size > max_args:
+        raise ValueError(
+            "Query parameters exceed the supported batch size "
+            "(%d > %d)." % (total_size, max_args))
+
+    if conn_pool_mgr is None:
         conn_pool_mgr = init_conn_pool(db_config, max_workers, scan_params)
         local_pool_init = True
-    else:
-        max_workers = conn_pool_mgr.conn_pool._processes
 
     chunk_size = math.ceil(total_size / max_workers)
-    chunks = [argslist[i: i + chunk_size] for i in range(0, total_size, chunk_size)]
+
+    def _iter_chunks(items, size):
+        for i in range(0, len(items), size):
+            yield items[i: i + size]
     
     worker = partial(
         execute_single,
         sql_template=sql_template
     )
-    with conn_pool_mgr.lock:
-        data = conn_pool_mgr.conn_pool.map(worker, chunks)
-        flat = [item for group in data for item in group]
-
-    if local_pool_init:
-        close_conn_pool(conn_pool_mgr)
-    return flat
+    try:
+        with conn_pool_mgr.lock:
+            flat = []
+            for group in conn_pool_mgr.conn_pool.imap(
+                    worker, _iter_chunks(argslist, chunk_size)):
+                flat.extend(group)
+        return flat
+    finally:
+        if local_pool_init:
+            close_conn_pool(conn_pool_mgr)
 
 def _split_sql(sql):
     """Split *sql* on a single ``%s`` placeholder.
