@@ -19,7 +19,8 @@ from opensearch_sdk.retrieval import (
     ModelRerankFusion,
     DashScopeModel,
     IndexConfig,
-    IndexType
+    IndexType,
+    trusted_sql
 )
 
 config = load_config()
@@ -268,7 +269,7 @@ def example_custom_retriever_config(client):
         query_vector=[0.85, 0.15, 0.0],
         metric="cosine",
         ef_search=100,
-        filter_condition="id IN ('doc1', 'doc4', 'doc5')",
+        filter_condition=trusted_sql("id IN ('doc1', 'doc4', 'doc5')"),
         output_columns=['question', 'answer']
     )
 

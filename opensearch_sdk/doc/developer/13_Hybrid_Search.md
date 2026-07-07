@@ -22,7 +22,7 @@
 #### VectorRetriever（向量检索器）
 
 ```python
-from opensearch_sdk.retrieval import VectorRetriever
+from opensearch_sdk.retrieval import VectorRetriever, trusted_sql
 
 vec_ret = VectorRetriever(
     query_vector=[0.9, 0.1, 0.0, 0.0],
@@ -37,13 +37,13 @@ vec_ret = VectorRetriever(
 - `vector_column`: 向量字段名
 - `metric`: 相似度度量方式（"cosine", "l2", "innerproduct"）
 - `output_columns`: 返回的字段列表
-- `filter_condition`: SQL WHERE 过滤条件（可选）
+- `filter_condition`: 使用 `trusted_sql()` 包装的 SQL WHERE 过滤条件（可选）
 - `filter_params`: 过滤条件的参数（可选）
 
 #### FullTextRetriever（全文检索器）
 
 ```python
-from opensearch_sdk.retrieval import FullTextRetriever
+from opensearch_sdk.retrieval import FullTextRetriever, trusted_sql
 
 ft_ret = FullTextRetriever(
     query_text="Opensearch",
@@ -56,7 +56,7 @@ ft_ret = FullTextRetriever(
 - `query_text`: 查询文本
 - `text_column`: 文本字段名（需要有 BM25 索引）
 - `output_columns`: 返回的字段列表
-- `filter_condition`: SQL WHERE 过滤条件（可选）
+- `filter_condition`: 使用 `trusted_sql()` 包装的 SQL WHERE 过滤条件（可选）
 - `filter_params`: 过滤条件的参数（可选）
 - `use_bm25_taat`: 是否使用 TAAT 方法（可选）
 - `bm25_k1`, `bm25_b`: BM25 参数（可选）
@@ -199,7 +199,7 @@ vec_ret = VectorRetriever(
     query_vector=[0.85, 0.15, 0.0, 0.0],
     vector_column='embedding',
     metric="cosine",
-    filter_condition='"category" = %s',
+    filter_condition=trusted_sql('"category" = %s'),
     filter_params=['技术'],
     output_columns=['question', 'answer', 'category']
 )
@@ -207,7 +207,7 @@ vec_ret = VectorRetriever(
 ft_ret = FullTextRetriever(
     query_text="Opensearch",
     text_column='question',
-    filter_condition='"category" = %s',
+    filter_condition=trusted_sql('"category" = %s'),
     filter_params=['技术'],
     output_columns=['question', 'answer', 'category']
 )
@@ -324,7 +324,7 @@ results = client.multi.hybrid_search(
 # 在检索器层面添加过滤，减少传输和处理的数据量
 vec_ret = VectorRetriever(
     query_vector=[...],
-    filter_condition='"status" = %s',
+    filter_condition=trusted_sql('"status" = %s'),
     filter_params=['active']
 )
 ```

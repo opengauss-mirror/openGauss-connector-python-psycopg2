@@ -6,7 +6,8 @@ from psycopg2 import pool, sql
 from psycopg2.extras import RealDictCursor, execute_values
 from psycopg2.vector_types import (
     TableSchema, IndexConfig, SearchResult,
-    VectorDBException, TableNotFoundException, ColumnType, DistanceMetric
+    VectorDBException, TableNotFoundException, ColumnType, DistanceMetric,
+    TrustedSQL, normalize_non_negative_int, quote_identifier, require_trusted_sql
 )
 from psycopg2.retrievers import VectorRetriever, FullTextRetriever
 from psycopg2.multi_retrieval import MultiRetrievalEngine, FusionStrategy, RRFFusion, WeightedFusion
@@ -163,7 +164,8 @@ class MultiRetrieverClient:
         sql_parts = ["CREATE TABLE"]
         if if_not_exists:
             sql_parts.append("IF NOT EXISTS")
-        sql_parts.append(f'"{table_name}"')
+        quoted_table = quote_identifier(table_name)
+        sql_parts.append(quoted_table)
 
         column_defs = [col.to_sql() for col in schema.columns]
         sql_parts.append(f"({', '.join(column_defs)})")
@@ -173,15 +175,16 @@ class MultiRetrieverClient:
         try:
             self.execute_sql(sql_query, fetch=False)
             if schema.comment:
-                escaped_comment = schema.comment.replace("'", "''")
-                comment_sql = f'COMMENT ON TABLE "{table_name}" IS \'{escaped_comment}\''
-                self.execute_sql(comment_sql, fetch=False)
+                comment_sql = f"COMMENT ON TABLE {quoted_table} IS %s"
+                self.execute_sql(comment_sql, (schema.comment,), fetch=False)
 
             for col in schema.columns:
                 if col.comment:
-                    escaped_col_comment = col.comment.replace("'", "''")
-                    col_comment_sql = f'COMMENT ON COLUMN "{table_name}"."{col.name}" IS \'{escaped_col_comment}\''
-                    self.execute_sql(col_comment_sql, fetch=False)
+                    col_comment_sql = (
+                        f"COMMENT ON COLUMN {quoted_table}.{quote_identifier(col.name)} "
+                        "IS %s"
+                    )
+                    self.execute_sql(col_comment_sql, (col.comment,), fetch=False)
             logger.info(f"Table '{table_name}' created successfully")
             return True
         except Exception as e:
@@ -204,11 +207,14 @@ class MultiRetrieverClient:
         Returns:
             Whether deletion was successful
         """
-        sql_query = sql.SQL('DROP TABLE {}{}{}').format(
-            sql.SQL('IF EXISTS ') if if_exists else sql.SQL(''),
-            sql.Identifier(table_name),
-            sql.SQL(' CASCADE') if cascade else sql.SQL('')
-        )
+        sql_parts = ["DROP TABLE"]
+        if if_exists:
+            sql_parts.append("IF EXISTS")
+        sql_parts.append(quote_identifier(table_name))
+        if cascade:
+            sql_parts.append("CASCADE")
+
+        sql_query = " ".join(sql_parts)
 
         try:
             self.execute_sql(sql_query, fetch=False)
@@ -330,11 +336,14 @@ class MultiRetrieverClient:
         Returns:
             Whether deletion was successful
         """
-        sql_query = sql.SQL('DROP INDEX {}{}{}').format(
-            sql.SQL('IF EXISTS ') if if_exists else sql.SQL(''),
-            sql.Identifier(index_name),
-            sql.SQL(' CASCADE') if cascade else sql.SQL('')
-        )
+        sql_parts = ["DROP INDEX"]
+        if if_exists:
+            sql_parts.append("IF EXISTS")
+        sql_parts.append(quote_identifier(index_name))
+        if cascade:
+            sql_parts.append("CASCADE")
+
+        sql_query = " ".join(sql_parts)
 
         try:
             self.execute_sql(sql_query, fetch=False)
@@ -407,8 +416,8 @@ class MultiRetrieverClient:
             return 0
 
         columns = list(data[0].keys())
-        column_str = ", ".join(f'"{col}"' for col in columns)
-        query = f'INSERT INTO "{table_name}" ({column_str}) VALUES %s'
+        column_str = ", ".join(quote_identifier(col) for col in columns)
+        query = f'INSERT INTO {quote_identifier(table_name)} ({column_str}) VALUES %s'
 
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -437,7 +446,7 @@ class MultiRetrieverClient:
             self,
             table_name: str,
             data: Dict[str, Any],
-            condition: str,
+            condition: TrustedSQL,
             params: Dict = None
     ) -> int:
         """Update data
@@ -445,14 +454,17 @@ class MultiRetrieverClient:
         Args:
             table_name: Table name
             data: Data to update
-            condition: WHERE condition
+            condition: WHERE condition created with trusted_sql()
             params: Condition parameters
 
         Returns:
             Number of updated rows
         """
-        set_clause = ", ".join(f'"{k}" = %s' for k in data.keys())
-        query = f'UPDATE "{table_name}" SET {set_clause} WHERE {condition}'
+        if condition is None:
+            raise ValueError("condition must be provided")
+        condition_sql = require_trusted_sql(condition, 'condition')
+        set_clause = ", ".join(f'{quote_identifier(k)} = %s' for k in data.keys())
+        query = f'UPDATE {quote_identifier(table_name)} SET {set_clause} WHERE {condition_sql}'
 
         query_params = list(data.values())
         if params:
@@ -478,7 +490,7 @@ class MultiRetrieverClient:
     def delete(
             self,
             table_name: str,
-            condition: str = None,
+            condition: Optional[TrustedSQL] = None,
             ids: List = None,
             id_column: str = "id"
     ) -> int:
@@ -486,7 +498,7 @@ class MultiRetrieverClient:
 
         Args:
             table_name: Table name
-            condition: WHERE condition
+            condition: WHERE condition created with trusted_sql()
             ids: ID list (mutually exclusive with condition)
             id_column: ID column name (default "id")
 
@@ -495,10 +507,13 @@ class MultiRetrieverClient:
         """
         if ids is not None:
             placeholders = ", ".join(["%s"] * len(ids))
-            query = f'DELETE FROM "{table_name}" WHERE "{id_column}" IN ({placeholders})'
+            query = (
+                f'DELETE FROM {quote_identifier(table_name)} '
+                f'WHERE {quote_identifier(id_column)} IN ({placeholders})'
+            )
             params = tuple(ids)
         elif condition:
-            query = f'DELETE FROM "{table_name}" WHERE {condition}'
+            query = f'DELETE FROM {quote_identifier(table_name)} WHERE {require_trusted_sql(condition, "condition")}'
             params = ()
         else:
             raise ValueError("Either condition or ids must be provided")
@@ -524,42 +539,45 @@ class MultiRetrieverClient:
             self,
             table_name: str,
             columns: List[str] = None,
-            condition: str = None,
+            condition: Optional[TrustedSQL] = None,
             params: tuple = None,
             limit: int = None,
             offset: int = 0,
-            order_by: str = None
+            order_by: Optional[TrustedSQL] = None
     ) -> List[Dict]:
         """Query data
 
         Args:
             table_name: Table name
             columns: Columns to query (None means all columns)
-            condition: WHERE condition
+            condition: WHERE condition created with trusted_sql()
             params: Condition parameters
             limit: Limit on number of returned rows
             offset: Offset
-            order_by: Order by field
+            order_by: ORDER BY fragment created with trusted_sql()
 
         Returns:
             Query results
         """
-        column_str = "*" if not columns else ", ".join(f'"{col}"' for col in columns)
-        query = f'SELECT {column_str} FROM "{table_name}"'
+        column_str = "*" if not columns else ", ".join(quote_identifier(col) for col in columns)
+        query = f'SELECT {column_str} FROM {quote_identifier(table_name)}'
+        query_params = list(params or ())
 
         if condition:
-            query += f" WHERE {condition}"
+            query += f" WHERE {require_trusted_sql(condition, 'condition')}"
 
         if order_by:
-            query += f" ORDER BY {order_by}"
+            query += f" ORDER BY {require_trusted_sql(order_by, 'order_by')}"
 
-        if limit:
-            query += f" LIMIT {limit}"
+        if limit is not None:
+            query += " LIMIT %s"
+            query_params.append(normalize_non_negative_int(limit, 'limit'))
 
         if offset:
-            query += f" OFFSET {offset}"
+            query += " OFFSET %s"
+            query_params.append(normalize_non_negative_int(offset, 'offset'))
 
-        return self.execute_sql(query, params)
+        return self.execute_sql(query, tuple(query_params) if query_params else None)
 
     def __enter__(self):
         """Context manager entry"""
@@ -576,7 +594,7 @@ class MultiRetrieverClient:
             retriever,
             table_name: str,
             top_k: int,
-            filter_condition: str = None,
+            filter_condition: Optional[TrustedSQL] = None,
             filter_params: Dict = None,
             output_columns: List[str] = None
     ) -> List[Dict]:
@@ -605,7 +623,7 @@ class MultiRetrieverClient:
             top_k: int = 10,
             metric: str = "l2",
             id_column: str = "id",
-            filter_condition: str = None,
+            filter_condition: Optional[TrustedSQL] = None,
             filter_params: Dict = None,
             output_columns: List[str] = None,
             use_index: bool = True,
@@ -633,7 +651,7 @@ class MultiRetrieverClient:
             top_k: Number of results to return.
             metric: Distance metric (l2, inner_product, cosine).
             id_column: ID column name (primary key column).
-            filter_condition: SQL WHERE clause for filtering.
+            filter_condition: SQL WHERE clause created with trusted_sql().
             filter_params: Parameters for filter condition.
             output_columns: Columns to include in output.
             use_index: Whether to use index.
@@ -699,7 +717,7 @@ class MultiRetrieverClient:
             text_column: str = "content",
             top_k: int = 10,
             id_column: str = "id",
-            filter_condition: str = None,
+            filter_condition: Optional[TrustedSQL] = None,
             filter_params: Dict = None,
             output_columns: List[str] = None,
             use_bm25_taat: bool = False,
@@ -717,7 +735,7 @@ class MultiRetrieverClient:
             text_column: Text column name (must have a BM25 index).
             top_k: Number of results to return.
             id_column: ID column name (primary key column).
-            filter_condition: SQL WHERE clause for filtering.
+            filter_condition: SQL WHERE clause created with trusted_sql().
             filter_params: Parameters for filter condition.
             output_columns: Columns to include in output.
             use_bm25_taat: Whether to use TAAT method.

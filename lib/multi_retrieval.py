@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from psycopg2.retrievers import RetrievalResult
+from psycopg2.vector_types import TrustedSQL, normalize_non_negative_int
 
 if TYPE_CHECKING:
     from psycopg2.models import BaseModel
@@ -447,7 +448,7 @@ class MultiRetrievalEngine:
             client,
             table_name: str,
             top_k: int = 10,
-            filter_condition: str = None,
+            filter_condition: Optional[TrustedSQL] = None,
             filter_params: Dict = None,
             output_columns: List[str] = None,
             per_path_top_k: int = None,
@@ -462,7 +463,7 @@ class MultiRetrievalEngine:
             client: Database client.
             table_name: Table name.
             top_k: Number of final results to return.
-            filter_condition: SQL WHERE clause for filtering.
+            filter_condition: SQL WHERE clause created with trusted_sql().
             filter_params: Parameters for filter condition.
             output_columns: Columns to include in output.
             per_path_top_k: Results per retrieval path (defaults to top_k * 2).
@@ -474,8 +475,11 @@ class MultiRetrievalEngine:
         Returns:
             Fused results as list of dicts.
         """
+        top_k = normalize_non_negative_int(top_k, "top_k")
         if per_path_top_k is None:
             per_path_top_k = top_k * 2
+        else:
+            per_path_top_k = normalize_non_negative_int(per_path_top_k, "per_path_top_k")
 
         if timeout is None:
             timeout = self.DEFAULT_TIMEOUT

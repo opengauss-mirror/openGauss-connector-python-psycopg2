@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from psycopg2 import sql
 from psycopg2.retrievers import FullTextRetriever, VectorRetriever
+from psycopg2.vector_types import TrustedSQL, trusted_sql, normalize_non_negative_int
 
 from opensearch_sdk.client.constants import MAX_KNN_TOP_K, MIN_KNN_TOP_K
 from opensearch_sdk.client.doc_utils.helpers import with_search_trace
@@ -247,7 +248,7 @@ class SearchOpsMixin:
     @staticmethod
     def _prepare_retriever_filter(
         filter_query: Optional[Dict[str, Any]]
-    ) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+    ) -> Tuple[Optional[TrustedSQL], Optional[Dict[str, Any]]]:
         """将 OpenSearch filter 转成 retriever 使用的条件和参数。"""
         if not filter_query:
             return None, None
@@ -257,7 +258,7 @@ class SearchOpsMixin:
             return filter_condition, None
 
         filter_params = {f"param_{i}": value for i, value in enumerate(filter_params_list)}
-        return filter_condition, filter_params
+        return trusted_sql(filter_condition), filter_params
 
     @staticmethod
     def _validate_knn_search_inputs(
@@ -352,10 +353,11 @@ class SearchOpsMixin:
             cursor = conn.cursor()
             try:
                 if ef_search is not None:
-                    set_sql = f"SET hnsw_ef_search = {ef_search}; "
-                    cursor.execute(set_sql + final_sql.as_string(conn), params)
-                else:
-                    cursor.execute(final_sql, params)
+                    cursor.execute(
+                        "SELECT set_config('hnsw_ef_search', %s, false)",
+                        (str(normalize_non_negative_int(ef_search, "ef_search")),),
+                    )
+                cursor.execute(final_sql, params)
 
                 rows = cursor.fetchall()
                 column_names = [desc[0] for desc in cursor.description] if cursor.description else []
