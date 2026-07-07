@@ -160,6 +160,7 @@ static void
 conn_notice_callback(void *args, const char *message)
 {
     struct connectionObject_notice *notice;
+    struct connectionObject_notice *oldest;
     connectionObject *self = (connectionObject *)args;
 
     Dprintf("conn_notice_callback: %s", message);
@@ -169,6 +170,18 @@ conn_notice_callback(void *args, const char *message)
        called from libpq and when we're inside libpq the connection is usually
        locked.
     */
+    if (self->notice_pending_count >= CONN_NOTICES_LIMIT
+            && self->notice_pending) {
+        oldest = self->notice_pending;
+        self->notice_pending = oldest->next;
+        if (self->last_notice == oldest) {
+            self->last_notice = self->notice_pending;
+        }
+        free(oldest->message);
+        free(oldest);
+        self->notice_pending_count--;
+    }
+
     notice = (struct connectionObject_notice *)
         malloc(sizeof(struct connectionObject_notice));
     if (NULL == notice) {
@@ -189,6 +202,7 @@ conn_notice_callback(void *args, const char *message)
         self->last_notice->next = notice;
         self->last_notice = notice;
     }
+    self->notice_pending_count++;
 }
 
 /* Expose the notices received as Python objects.
@@ -270,6 +284,7 @@ conn_notice_clean(connectionObject *self)
     }
 
     self->last_notice = self->notice_pending = NULL;
+    self->notice_pending_count = 0;
 }
 
 

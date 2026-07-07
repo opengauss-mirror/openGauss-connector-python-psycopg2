@@ -1406,6 +1406,7 @@ connection_setup(connectionObject *self, const char *dsn, long int async)
 
     if (!(self->dsn = conn_obscure_password(dsn))) { goto exit; }
     if (!(self->notice_list = PyList_New(0))) { goto exit; }
+    self->notice_pending_count = 0;
     if (!(self->notifies = PyList_New(0))) { goto exit; }
     self->async = async;
     self->status = CONN_STATUS_SETUP;
