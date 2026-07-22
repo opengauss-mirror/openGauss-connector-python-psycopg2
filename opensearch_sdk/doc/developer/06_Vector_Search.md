@@ -67,7 +67,7 @@ def vector_search(
     top_k: int = 10,
     metric: str = "l2",
     id_column: str = "id",
-    filter_condition: str = None,
+    filter_condition: Optional[TrustedSQL] = None,
     filter_params: Dict = None,
     output_columns: List[str] = None,
     use_index: bool = True,
@@ -86,7 +86,7 @@ def vector_search(
 | top_k | int | 否 | 10 | 返回结果数量 |
 | metric | str | 否 | l2 | 相似度算法：cosine/l2/dot_product |
 | id_column | str | 否 | id | 主键列名 |
-| filter_condition | str | 否 | None | SQL WHERE 条件（不含 WHERE 关键字） |
+| filter_condition | TrustedSQL | 否 | None | 使用 `trusted_sql()` 包装的 SQL WHERE 条件（不含 WHERE 关键字） |
 | filter_params | dict | 否 | None | 过滤参数 |
 | output_columns | List[str] | 否 | None | 输出列（None 表示所有列） |
 | use_index | bool | 否 | True | 是否使用索引 |
@@ -137,8 +137,8 @@ def vector_search(
    └── SELECT {output_columns} FROM {table_name}
 
 4. 处理过滤条件（filter_condition）
-   └── 支持任意 SQL WHERE 条件
-   └── 参数化查询防止 SQL 注入
+   └── 仅接受由 `trusted_sql()` 显式包装的 SQL WHERE 条件
+   └── 动态值必须通过 `filter_params` 参数化绑定
 
 5. 添加向量相似度计算
    └── ORDER BY {vector_column} {operator} %s::vector ASC
@@ -496,13 +496,15 @@ result = client.search(
 #### 使用 vector_search()（推荐）
 
 ```python
+from opensearch_sdk.retrieval import trusted_sql
+
 # 按关键词过滤
 result = client.multi.vector_search(
     table_name="vector_index",
     query_vector=query_vector,
     top_k=10,
     metric="cosine",
-    filter_condition="category = %s",
+    filter_condition=trusted_sql("category = %s"),
     filter_params=("electronics",)
 )
 ```
@@ -599,7 +601,7 @@ result = client.multi.vector_search(
     query_vector=query_vector,
     top_k=10,
     metric="cosine",
-    filter_condition="category = %s AND in_stock = %s",
+    filter_condition=trusted_sql("category = %s AND in_stock = %s"),
     filter_params=("electronics", True)
 )
 ```
@@ -702,7 +704,7 @@ result = client.multi.vector_search(
     query_vector=query_vector,
     top_k=3,
     metric="cosine",
-    filter_condition="category = %s",
+    filter_condition=trusted_sql("category = %s"),
     filter_params=("electronics",)
 )
 
@@ -888,7 +890,7 @@ result = client.multi.vector_search(
     query_vector=[0.1, 0.2, ...],
     top_k=10,
     metric="cosine",
-    filter_condition="category = %s",
+    filter_condition=trusted_sql("category = %s"),
     filter_params=("electronics",)
 )
 ```
@@ -1100,7 +1102,7 @@ def vector_search(
     top_k: int = 10,
     metric: str = "l2",
     id_column: str = "id",
-    filter_condition: str = None,
+    filter_condition: Optional[TrustedSQL] = None,
     filter_params: Dict = None,
     output_columns: List[str] = None,
     use_index: bool = True,
@@ -1144,7 +1146,7 @@ def vector_search(
 - `top_k`: 返回结果数量（默认 10）
 - `metric`: 相似度算法（cosine/l2/dot_product）
 - `id_column`: 主键列名（默认 "id"）
-- `filter_condition`: SQL WHERE 条件（不含 WHERE 关键字）
+- `filter_condition`: 使用 `trusted_sql()` 包装的 SQL WHERE 条件（不含 WHERE 关键字）
 - `filter_params`: 过滤参数字典
 - `output_columns`: 输出列列表（None 表示所有列）
 - `use_index`: 是否使用索引（默认 True）
@@ -1163,11 +1165,11 @@ METRIC_MAP = {
 **过滤条件示例**：
 ```python
 # 单个条件
-filter_condition="category = %s",
+filter_condition=trusted_sql("category = %s"),
 filter_params={"category": "electronics"}
 
 # 多个条件
-filter_condition="category = %s AND price > %s",
+filter_condition=trusted_sql("category = %s AND price > %s"),
 filter_params={"category": "electronics", "min_price": 100}
 ```
 
@@ -1575,7 +1577,7 @@ result = client.multi.vector_search(
     top_k=10,                       # 返回数量（默认：10，范围：1-10000）
     metric="cosine",                # 相似度算法（默认：l2）
     id_column="id",                 # 主键列名（默认：id）
-    filter_condition="category = %s AND price > %s",  # SQL WHERE 条件（不含 WHERE）
+    filter_condition=trusted_sql("category = %s AND price > %s"),  # 可信 SQL 条件
     filter_params={"category": "electronics", "min_price": 100},  # 参数化查询参数
     output_columns=["id", "title", "price"],  # 输出列（None 表示所有列）
     use_index=True,                 # 是否使用索引（默认：True）
@@ -1592,7 +1594,7 @@ result = client.multi.vector_search(
 - **top_k** int（可选，默认：10） - 返回结果数量，范围 1-10000
 - **metric** str（可选，默认：l2） - 相似度算法：cosine/l2/dot_product
 - **id_column** str（可选，默认：id） - 主键列名，用于唯一标识
-- **filter_condition** str（可选） - SQL WHERE 条件（不含 WHERE 关键字），支持参数化
+- **filter_condition** TrustedSQL（可选） - 使用 `trusted_sql()` 包装的 SQL WHERE 条件；动态值必须参数化
 - **filter_params** dict（可选） - 过滤参数字典，防止 SQL 注入
 - **output_columns** List[str]（可选） - 输出列列表，None 表示所有列
 - **use_index** bool（可选，默认：True） - 是否使用 HNSW 索引，False 则暴力扫描

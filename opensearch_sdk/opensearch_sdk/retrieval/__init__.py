@@ -40,6 +40,9 @@ from opensearch_sdk.retrieval.types import (
     IndexConfig,
     SearchResult,
     RetrievalResult,  # Defined locally in types.py
+    # Trusted SQL fragments
+    TrustedSQL,
+    trusted_sql,
     # Exceptions
     VectorDBException,
     TableNotFoundException,
@@ -61,6 +64,9 @@ __all__ = [
     "IndexConfig",
     "RetrievalResult",
     "SearchResult",
+    # Trusted SQL fragments
+    "TrustedSQL",
+    "trusted_sql",
     # Retriever classes
     "BaseRetriever",
     "VectorRetriever",

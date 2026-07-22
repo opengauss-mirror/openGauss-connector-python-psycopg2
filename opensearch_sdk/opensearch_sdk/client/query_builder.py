@@ -6,6 +6,7 @@ except ImportError:
     from typing_extensions import Literal
 
 from psycopg2 import sql
+from psycopg2.vector_types import quote_identifier
 
 from opensearch_sdk.client.utils import _validate_identifier, _validate_identifiers, normalize_identifier
 from opensearch_sdk.client.post_filter_mark import PostFilterMark
@@ -588,7 +589,7 @@ class QueryBuilder:
         params = []
         for field, value in term_query.items():
             validated_field = QueryBuilder._knn_filter_field(field, "Filter term")
-            conditions.append(f'"{validated_field}" = %s')
+            conditions.append(f'{quote_identifier(validated_field)} = %s')
             params.append(value)
         return conditions, params
 
@@ -599,7 +600,7 @@ class QueryBuilder:
         for field, values in terms_query.items():
             validated_field = QueryBuilder._knn_filter_field(field, "Filter terms")
             placeholders = ','.join(['%s'] * len(values))
-            conditions.append(f'"{validated_field}" IN ({placeholders})')
+            conditions.append(f'{quote_identifier(validated_field)} IN ({placeholders})')
             params.extend(values)
         return conditions, params
 
@@ -609,7 +610,7 @@ class QueryBuilder:
         params = []
         for field, value in match_query.items():
             validated_field = QueryBuilder._knn_filter_field(field, "Filter match")
-            conditions.append(f'"{validated_field}" LIKE %s::text')
+            conditions.append(f'{quote_identifier(validated_field)} LIKE %s::text')
             params.append(f"%{value}%")
         return conditions, params
 
@@ -624,7 +625,7 @@ class QueryBuilder:
             validated_field = QueryBuilder._knn_filter_field(field, "Filter range")
             for key, operator in operators:
                 if key in range_params:
-                    conditions.append(f'"{validated_field}" {operator} %s')
+                    conditions.append(f'{quote_identifier(validated_field)} {operator} %s')
                     params.append(range_params[key])
         return conditions, params
 

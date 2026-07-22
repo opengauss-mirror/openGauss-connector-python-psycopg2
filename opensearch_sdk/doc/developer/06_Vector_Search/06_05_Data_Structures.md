@@ -13,7 +13,7 @@
 | vector_column | str | 否 | embedding | 向量字段名 |
 | top_k | int | 否 | 10 | 返回结果数量（1-10000） |
 | metric | str | 否 | l2 | 相似度算法：cosine/l2/dot_product |
-| filter_condition | str | 否 | None | SQL WHERE 条件（不含 WHERE） |
+| filter_condition | TrustedSQL | 否 | None | 使用 `trusted_sql()` 包装的 SQL WHERE 条件（不含 WHERE） |
 | output_columns | List[str] | 否 | None | 输出列（None 表示所有列） |
 | ef_search | int | 否 | None | HNSW 搜索深度 |
 

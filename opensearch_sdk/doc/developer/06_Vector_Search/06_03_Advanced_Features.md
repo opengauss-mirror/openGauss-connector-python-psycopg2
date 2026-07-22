@@ -8,15 +8,18 @@
 
 ### 1.1 使用 `vector_search()` 进行过滤
 
-通过 `filter_condition` 和 `filter_params` 传入 SQL WHERE 子句。
+通过 `filter_condition` 和 `filter_params` 传入 SQL WHERE 子句。SQL 结构需使用
+`trusted_sql()` 显式包装，动态值继续通过参数绑定。
 
 ```python
+from opensearch_sdk.retrieval import trusted_sql
+
 result = client.multi.vector_search(
     table_name="products",
     query_vector=query_vector,
     top_k=10,
     metric="cosine",
-    filter_condition="category = %s AND price > %s",
+    filter_condition=trusted_sql("category = %s AND price > %s"),
     filter_params=("electronics", 100)
 )
 ```

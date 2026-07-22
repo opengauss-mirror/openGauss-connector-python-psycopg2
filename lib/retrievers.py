@@ -10,14 +10,25 @@ Ref: https://docs.opengauss.org/zh/docs/latest/database_reference/datavec_vector
 """
 
 import logging
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Union, Tuple
 
 from psycopg2.extras import RealDictCursor
-from psycopg2.vector_types import DistanceMetric, VectorDataType
+from psycopg2.vector_types import (
+    DistanceMetric, VectorDataType, TrustedSQL, normalize_non_negative_int,
+    quote_identifier, require_trusted_sql
+)
 
 logger = logging.getLogger(__name__)
+_GUC_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
+
+
+def _validate_guc_name(name: str) -> str:
+    if not _GUC_NAME_RE.match(name):
+        raise ValueError(f"invalid GUC name: {name}")
+    return name
 
 
 # ========== Retrieval Results ==========
@@ -50,7 +61,7 @@ class BaseRetriever(ABC):
             self,
             id_column: str = "id",
             top_k: int = None,
-            filter_condition: str = None,
+            filter_condition: Optional[TrustedSQL] = None,
             filter_params: Union[Dict, list, tuple] = None,
             output_columns: List[str] = None,
     ):
@@ -78,7 +89,7 @@ class BaseRetriever(ABC):
         cols = list(output_columns)
         if self.id_column not in cols:
             cols.insert(0, self.id_column)
-        return ", ".join(f'"{c}"' for c in cols)
+        return ", ".join(quote_identifier(c) for c in cols)
 
     @staticmethod
     def _inject_filter_params(params: list, filter_params, insert_at: int = 1):
@@ -111,7 +122,8 @@ class BaseRetriever(ABC):
         try:
             for name, value in self._get_guc_settings().items():
                 if value is not None:
-                    cursor.execute(f"SET {name} = {value}")
+                    name = _validate_guc_name(name)
+                    cursor.execute("SELECT set_config(%s, %s, false)", (name, str(value)))
                     guc_set.append(name)
 
             cursor.execute(query, params)
@@ -128,7 +140,7 @@ class BaseRetriever(ABC):
     # -- Template method --
 
     @abstractmethod
-    def _build_query(self, table_name: str, top_k: int, filter_: Optional[str],
+    def _build_query(self, table_name: str, top_k: int, filter_: Optional[TrustedSQL],
                      filter_params, output_columns: Optional[List[str]]) -> Tuple[str, list]:
         """Build ``(sql_string, param_list)``. Subclasses must implement."""
 
@@ -141,7 +153,7 @@ class BaseRetriever(ABC):
             client,
             table_name: str,
             top_k: int = None,
-            filter_condition: str = None,
+            filter_condition: Optional[TrustedSQL] = None,
             filter_params: Union[Dict, list, tuple] = None,
             output_columns: List[str] = None,
             **kwargs,
@@ -192,7 +204,7 @@ class VectorRetriever(BaseRetriever):
             *,
             id_column: str = "id",
             top_k: int = None,
-            filter_condition: str = None,
+            filter_condition: Optional[TrustedSQL] = None,
             filter_params: Union[Dict, list, tuple] = None,
             output_columns: List[str] = None,
             use_index: bool = True,
@@ -258,24 +270,27 @@ class VectorRetriever(BaseRetriever):
         return metric.get_operator()
 
     def _build_query(self, table_name, top_k, filter_, filter_params, output_columns):
+        top_k = normalize_non_negative_int(top_k, "top_k")
+        filter_sql = require_trusted_sql(filter_, "filter_condition") if filter_ else None
         operator = self._get_operator()
         select_cols = self._build_select_columns(output_columns)
         vector_str = "[" + ",".join(str(v) for v in self.query_vector) + "]"
 
-        dist_expr = f'"{self.vector_column}" {operator} %s::vector'
+        dist_expr = f'{quote_identifier(self.vector_column)} {operator} %s::vector'
         query_parts = [
             f"SELECT {select_cols}, {dist_expr} AS distance",
-            f'FROM "{table_name}"',
+            f'FROM {quote_identifier(table_name)}',
         ]
-        if filter_:
-            query_parts.append(f"WHERE {filter_}")
+        if filter_sql:
+            query_parts.append(f"WHERE {filter_sql}")
         query_parts.append(f"ORDER BY {dist_expr}")
-        query_parts.append(f"LIMIT {top_k}")
+        query_parts.append("LIMIT %s")
 
         query = " ".join(query_parts)
         params = [vector_str, vector_str]
         if filter_ and filter_params:
             self._inject_filter_params(params, filter_params)
+        params.append(top_k)
 
         return query, params
 
@@ -309,7 +324,7 @@ class FullTextRetriever(BaseRetriever):
             *,
             id_column: str = "id",
             top_k: int = None,
-            filter_condition: str = None,
+            filter_condition: Optional[TrustedSQL] = None,
             filter_params: Union[Dict, list, tuple] = None,
             output_columns: List[str] = None,
             use_bm25_taat: bool = False,
@@ -341,22 +356,25 @@ class FullTextRetriever(BaseRetriever):
         return settings
 
     def _build_query(self, table_name, top_k, filter_, filter_params, output_columns):
+        top_k = normalize_non_negative_int(top_k, "top_k")
+        filter_sql = require_trusted_sql(filter_, "filter_condition") if filter_ else None
         select_cols = self._build_select_columns(output_columns)
-        score_expr = f'"{self.text_column}" <&> %s'
+        score_expr = f'{quote_identifier(self.text_column)} <&> %s'
 
         query_parts = [
             f"SELECT {select_cols}, {score_expr} AS score",
-            f'FROM "{table_name}"',
+            f'FROM {quote_identifier(table_name)}',
         ]
-        if filter_:
-            query_parts.append(f"WHERE {filter_}")
+        if filter_sql:
+            query_parts.append(f"WHERE {filter_sql}")
         query_parts.append(f"ORDER BY {score_expr} DESC")
-        query_parts.append(f"LIMIT {top_k}")
+        query_parts.append("LIMIT %s")
 
         query = " ".join(query_parts)
         params = [self.query_text, self.query_text]
         if filter_ and filter_params:
             self._inject_filter_params(params, filter_params)
+        params.append(top_k)
 
         return query, params
 

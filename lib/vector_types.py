@@ -4,6 +4,7 @@ Vector Database Type Definition Module
 Provides data types, enumerations, and data classes related to vector retrieval and full-text search.
 """
 
+import math
 from enum import Enum
 from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass, field
@@ -13,22 +14,88 @@ PARALLEL_WORKERS_MIN = 1
 PARALLEL_WORKERS_MAX = 32
 
 
-def _quote_identifier(name: str) -> str:
-    """Quote a SQL identifier without requiring a live database connection."""
-    if not isinstance(name, str) or not name:
-        raise ValueError("identifier must be a non-empty string")
+@dataclass(frozen=True)
+class TrustedSQL:
+    """Explicit wrapper marking a SQL fragment as caller-owned and trusted.
+
+    APIs that accept raw SQL fragments (WHERE conditions, ORDER BY clauses,
+    partial-index predicates) cannot be parameterized, so they require a
+    ``TrustedSQL`` instead of a plain string. Wrapping a value is an explicit,
+    auditable assertion that the fragment was built entirely by trusted code.
+    """
+    sql: str
+
+
+def trusted_sql(sql_text: str) -> TrustedSQL:
+    """Mark a SQL fragment as trusted so it may be embedded verbatim.
+
+    This is NOT a sanitizer: it performs no escaping or validation of the SQL.
+    The wrapped text is inserted into the query as-is. Only pass fragments that
+    are fully constructed by trusted code. Never interpolate external or
+    user-supplied input into the string handed to this function — doing so
+    reopens the SQL injection hole this trust boundary exists to close. Bind
+    dynamic values as query parameters instead.
+    """
+    if not isinstance(sql_text, str):
+        raise TypeError("trusted SQL fragment must be a string")
+    return TrustedSQL(sql_text)
+
+
+def require_trusted_sql(value: Any, name: str) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, TrustedSQL):
+        return value.sql
+    raise ValueError(f"{name} must be created with trusted_sql()")
+
+
+def quote_identifier(name: Any) -> str:
+    if not isinstance(name, str):
+        raise TypeError("SQL identifier must be a string")
     if "\x00" in name:
-        raise ValueError("identifier must not contain NUL bytes")
+        raise ValueError("SQL identifier cannot contain NUL")
     return '"' + name.replace('"', '""') + '"'
 
 
-def _validate_partial_index_where(where: str) -> str:
-    """Reject multi-statement/comment payloads in a partial index predicate."""
-    if not isinstance(where, str) or not where.strip():
-        raise ValueError("partial index condition must be a non-empty string")
-    if any(token in where for token in (";", "--", "/*", "*/")):
-        raise ValueError("partial index condition must not contain SQL comments or statement separators")
-    return where
+def quote_literal(value: str) -> str:
+    if "\x00" in value:
+        raise ValueError("SQL literal cannot contain NUL")
+    escaped = value.replace("\\", "\\\\").replace("'", "''")
+    return "E'" + escaped + "'"
+
+
+_SQL_DEFAULT_KEYWORDS = {
+    'CURRENT_TIMESTAMP', 'CURRENT_DATE', 'CURRENT_TIME',
+    'NOW()', 'LOCALTIME', 'LOCALTIMESTAMP',
+    'NULL', 'TRUE', 'FALSE',
+}
+
+
+def normalize_non_negative_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be a non-negative integer")
+    if value < 0:
+        raise ValueError(f"{name} must be a non-negative integer")
+    return int(value)
+
+
+def _positive_int_sql(value: Any, name: str) -> str:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be a positive integer")
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return str(int(value))
+
+
+def _number_sql(value: Any, name: str) -> str:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be numeric")
+    if isinstance(value, int):
+        return str(int(value))
+    normalized = float(value)
+    if not math.isfinite(normalized):
+        raise ValueError(f"{name} must be finite")
+    return str(normalized)
 
 
 class ColumnType(Enum):
@@ -202,10 +269,10 @@ class ColumnSchema:
         if self.type in self._DIMENSION_TYPES:
             if not self.dimension:
                 raise ValueError(f"{self.type.value} column '{self.name}' requires dimension")
-            return f"{self.type.value}({self.dimension})"
+            return f"{self.type.value}({_positive_int_sql(self.dimension, 'dimension')})"
 
         if self.type in self._LENGTH_TYPES:
-            return f"{self.type.value}({self.max_length})" if self.max_length else self.type.value
+            return f"{self.type.value}({_positive_int_sql(self.max_length, 'max_length')})" if self.max_length else self.type.value
 
         if self.type == ColumnType.ARRAY:
             if not self.array_element_type:
@@ -216,7 +283,7 @@ class ColumnSchema:
 
     def to_sql(self) -> str:
         """Convert to SQL definition"""
-        sql_parts = [f'"{self.name}"', self._type_sql()]
+        sql_parts = [quote_identifier(self.name), self._type_sql()]
 
         # Constraints
         if self.primary_key:
@@ -235,24 +302,16 @@ class ColumnSchema:
         if isinstance(self.default, bool):
             return str(self.default).upper()
         elif isinstance(self.default, (int, float)):
-            return str(self.default)
+            return _number_sql(self.default, "default")
+        elif isinstance(self.default, TrustedSQL):
+            return self.default.sql
         elif isinstance(self.default, str):
-            # SQL keywords and functions do not need quotes
-            sql_keywords = {
-                'CURRENT_TIMESTAMP', 'CURRENT_DATE', 'CURRENT_TIME',
-                'NOW()', 'LOCALTIME', 'LOCALTIMESTAMP',
-                'NULL', 'TRUE', 'FALSE'
-            }
-            if self.default.upper() in sql_keywords:
-                return self.default.upper()
-            # Check if it's a function call (contains parentheses)
-            elif '(' in self.default and ')' in self.default:
-                return self.default
-            else:
-                # Regular strings need quotes
-                return f"'{self.default}'"
+            default_upper = self.default.upper()
+            if default_upper in _SQL_DEFAULT_KEYWORDS:
+                return default_upper
+            return quote_literal(self.default)
         else:
-            return str(self.default)
+            raise ValueError("default must be bool, number, string, or TrustedSQL")
 
 
 @dataclass
@@ -360,15 +419,15 @@ class IndexConfig:
 
     # General parameters
     unique: bool = False
-    where: Optional[str] = None  # Partial index condition
+    where: Optional[TrustedSQL] = None  # Partial index condition (trusted SQL)
 
     # -- Helper methods to keep to_sql() cyclomatic complexity low --
 
     def _column_str(self) -> str:
         """Format column name(s) for SQL."""
         if isinstance(self.column, str):
-            return _quote_identifier(self.column)
-        return ", ".join(_quote_identifier(c) for c in self.column)
+            return quote_identifier(self.column)
+        return ", ".join(quote_identifier(c) for c in self.column)
 
     def _require_metric(self) -> None:
         """Raise if metric is not set (required for vector indexes)."""
@@ -388,9 +447,9 @@ class IndexConfig:
         """Collect PQ WITH-clause params."""
         params = ["enable_pq = on"]
         if self.pq_m is not None:
-            params.append(f"pq_m = {self.pq_m}")
+            params.append(f"pq_m = {_positive_int_sql(self.pq_m, 'pq_m')}")
         if self.pq_ksub is not None:
-            params.append(f"pq_ksub = {self.pq_ksub}")
+            params.append(f"pq_ksub = {_positive_int_sql(self.pq_ksub, 'pq_ksub')}")
         if include_residual and self.by_residual is not None:
             params.append(f"by_residual = {'on' if self.by_residual else 'off'}")
         return params
@@ -405,9 +464,9 @@ class IndexConfig:
         if include_lsg and self.enable_lsg:
             params = ["enable_lsg = on"]
             if self.lsg_degree is not None:
-                params.append(f"lsg_degree = {self.lsg_degree}")
+                params.append(f"lsg_degree = {_positive_int_sql(self.lsg_degree, 'lsg_degree')}")
             if self.lsg_alpha is not None:
-                params.append(f"lsg_alpha = {self.lsg_alpha}")
+                params.append(f"lsg_alpha = {_number_sql(self.lsg_alpha, 'lsg_alpha')}")
             return params
         return []
 
@@ -418,7 +477,7 @@ class IndexConfig:
 
         params = []
         if self.lists:
-            params.append(f"lists = {self.lists}")
+            params.append(f"lists = {_positive_int_sql(self.lists, 'lists')}")
         params.extend(self._quantization_params(include_residual=True))
 
         return f"{using} WITH ({', '.join(params)})" if params else using
@@ -430,9 +489,9 @@ class IndexConfig:
 
         params = []
         if self.m:
-            params.append(f"m = {self.m}")
+            params.append(f"m = {_positive_int_sql(self.m, 'm')}")
         if self.ef_construction:
-            params.append(f"ef_construction = {self.ef_construction}")
+            params.append(f"ef_construction = {_positive_int_sql(self.ef_construction, 'ef_construction')}")
         params.extend(self._quantization_params(include_lsg=True))
         if self.use_mmap:
             params.append("use_mmap = true")
@@ -446,11 +505,11 @@ class IndexConfig:
 
         params = []
         if self.index_size is not None:
-            params.append(f"index_size = {self.index_size}")
+            params.append(f"index_size = {_positive_int_sql(self.index_size, 'index_size')}")
         if self.enable_pq:
             params.append("enable_pq = on")
             if self.pq_m is not None:
-                params.append(f"pq_m = {self.pq_m}")
+                params.append(f"pq_m = {_positive_int_sql(self.pq_m, 'pq_m')}")
 
         return f"{using} WITH ({', '.join(params)})" if params else using
 
@@ -470,14 +529,14 @@ class IndexConfig:
         sql_parts = ["CREATE"]
         if self.unique:
             sql_parts.append("UNIQUE")
-        sql_parts.extend(["INDEX", _quote_identifier(self.name), "ON", _quote_identifier(table_name)])
+        sql_parts.extend(["INDEX", quote_identifier(self.name), f"ON {quote_identifier(table_name)}"])
 
         # Dispatch to the appropriate builder, or fall back to generic
         builder = self._INDEX_BUILDERS.get(self.index_type, IndexConfig._build_generic)
         sql_parts.append(builder(self))
 
         if self.where:
-            sql_parts.append(f"WHERE {_validate_partial_index_where(self.where)}")
+            sql_parts.append(f"WHERE {require_trusted_sql(self.where, 'where')}")
 
         return " ".join(sql_parts)
 
@@ -497,14 +556,15 @@ class IndexConfig:
             ALTER TABLE SQL string, or None if not needed
         """
         if self.parallel_workers is not None:
-            if not isinstance(self.parallel_workers, int):
+            if isinstance(self.parallel_workers, bool) or not isinstance(self.parallel_workers, int):
                 raise ValueError("parallel_workers must be an integer")
             if (self.parallel_workers < PARALLEL_WORKERS_MIN or
                     self.parallel_workers > PARALLEL_WORKERS_MAX):
                 raise ValueError(
                     "parallel_workers must be between "
                     f"{PARALLEL_WORKERS_MIN} and {PARALLEL_WORKERS_MAX}")
-            return f'ALTER TABLE {_quote_identifier(table_name)} SET(parallel_workers={self.parallel_workers})'
+            workers = _positive_int_sql(self.parallel_workers, 'parallel_workers')
+            return f'ALTER TABLE {quote_identifier(table_name)} SET(parallel_workers={workers})'
         return None
 
 

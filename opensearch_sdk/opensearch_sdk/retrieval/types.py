@@ -21,6 +21,9 @@ from psycopg2.vector_types import (
     TableSchema,
     IndexConfig,
     SearchResult,
+    # Trusted SQL fragments
+    TrustedSQL,
+    trusted_sql,
     # Exceptions
     VectorDBException,
     TableNotFoundException,
@@ -53,6 +56,8 @@ __all__ = [
     "TableSchema",
     "IndexConfig",
     "SearchResult",
+    "TrustedSQL",
+    "trusted_sql",
     "VectorDBException",
     "TableNotFoundException",
     "IndexNotFoundException",

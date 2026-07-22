@@ -261,6 +261,73 @@ class TestExecuteValues(FastExecuteTestMixin, testutils.ConnectingTestCase):
         self.assertEqual(cur.fetchall(), [(1, 'hi')])
 
 
+class TestOpenGaussBatchApi(testutils.ConnectingTestCase):
+    def setUp(self):
+        super().setUp()
+        cur = self.conn.cursor()
+        if not (hasattr(cur, "execute_params_batch")
+                and hasattr(cur, "execute_prepared_batch")
+                and hasattr(cur, "prepare")):
+            self.skipTest("openGauss batch cursor APIs are unavailable")
+        cur.execute("create table test_batch_api (id int primary key, data text)")
+
+    def test_params_batch_preserves_unicode_values(self):
+        cur = self.conn.cursor()
+        rows = [
+            [str(i), f"批量值-{i}-" + ("x" * (i + 1))]
+            for i in range(32)
+        ]
+
+        cur.execute_params_batch(
+            "insert into test_batch_api (id, data) values ($1, $2)",
+            2, len(rows), rows,
+        )
+        cur.execute("select id, data from test_batch_api order by id")
+
+        self.assertEqual(
+            cur.fetchall(),
+            [(int(row[0]), row[1]) for row in rows],
+        )
+
+    def test_prepared_batch_preserves_unicode_values(self):
+        cur = self.conn.cursor()
+        rows = [["1", "准备语句-一"], ["2", "准备语句-二"]]
+        cur.prepare(
+            "test_batch_api_insert",
+            "insert into test_batch_api (id, data) values ($1, $2)",
+            2,
+        )
+
+        cur.execute_prepared_batch(
+            "test_batch_api_insert", 2, len(rows), rows,
+        )
+        cur.execute("select id, data from test_batch_api order by id")
+
+        self.assertEqual(cur.fetchall(), [(1, rows[0][1]), (2, rows[1][1])])
+
+    def test_params_batch_rejects_short_outer_sequence(self):
+        cur = self.conn.cursor()
+
+        with self.assertRaises(psycopg2.DataError):
+            cur.execute_params_batch(
+                "insert into test_batch_api (id, data) values ($1, $2)",
+                2, 2, [["1", "one"]],
+            )
+
+    def test_prepared_batch_rejects_short_rows(self):
+        cur = self.conn.cursor()
+        cur.prepare(
+            "test_batch_api_short_row",
+            "insert into test_batch_api (id, data) values ($1, $2)",
+            2,
+        )
+
+        with self.assertRaises(psycopg2.DataError):
+            cur.execute_prepared_batch(
+                "test_batch_api_short_row", 2, 1, [["1"]],
+            )
+
+
 def test_suite():
     return unittest.TestLoader().loadTestsFromName(__name__)
 
