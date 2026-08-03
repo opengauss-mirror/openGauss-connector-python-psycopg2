@@ -33,10 +33,13 @@ class TestRangeExistsQuery(unittest.TestCase):
         """设置测试环境"""
         db_config = load_db_config()
         cls.client = OpenGauss(
-            hosts=[{'host': db_config.get('host', '172.17.9.26'), 'port': db_config.get('port', 5432)}],
-            database=db_config.get('database', 'es'),
-            user=db_config.get('user', 'jzc'),
-            password=db_config.get('password')
+            hosts=[{
+                'host': db_config.get('host', os.getenv('DB_HOST', 'localhost')),
+                'port': db_config.get('port', int(os.getenv('DB_PORT', '5432'))),
+            }],
+            database=db_config.get('database', os.getenv('DB_NAME', 'postgres')),
+            user=db_config.get('user', os.getenv('DB_USER', 'postgres')),
+            password=db_config.get('password', os.getenv('DB_PASSWORD'))
         )
         cls.test_index = "test_range_exists"
         

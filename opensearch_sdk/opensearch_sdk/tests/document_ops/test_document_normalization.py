@@ -32,11 +32,11 @@ class TestDocumentOperationsNormalization(unittest.TestCase):
         """测试前准备"""
         # 默认配置（仅作为后备）
         cls.db_config = {
-            'host': '172.17.9.26',
-            'port': 5432,
-            'database': 'es',
-            'user': 'jzc',
-            'password': os.getenv('DB_PASSWORD', '123qweASDz')  # 从环境变量获取，提供默认值用于开发环境
+            'host': os.getenv('DB_HOST', 'localhost'),
+            'port': int(os.getenv('DB_PORT', '5432')),
+            'database': os.getenv('DB_NAME', 'postgres'),
+            'user': os.getenv('DB_USER', 'postgres'),
+            'password': os.getenv('DB_PASSWORD')
         }
         
         # 尝试加载真实配置
