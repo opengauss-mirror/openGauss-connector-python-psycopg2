@@ -1,4 +1,5 @@
 # BasicClient 基础功能测试
+import os
 import unittest
 import json
 from pathlib import Path
@@ -17,11 +18,11 @@ class TestBasicClient(unittest.TestCase):
         db_config = load_db_config()
         
         cls.db_config = {
-            "dbname": db_config.get("database", "es"),
-            "user": db_config.get("user", "jzc"),
+            "dbname": db_config.get("database", os.getenv("DB_NAME", "postgres")),
+            "user": db_config.get("user", os.getenv("DB_USER", "postgres")),
             "password": db_config.get("password"),  # 必须从配置文件提供
-            "host": db_config.get("host", "172.17.9.26"),
-            "port": db_config.get("port", 5432)
+            "host": db_config.get("host", os.getenv("DB_HOST", "localhost")),
+            "port": db_config.get("port", int(os.getenv("DB_PORT", "5432")))
         }
         
         # 清理可能存在的残留表
