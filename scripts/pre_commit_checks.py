@@ -330,7 +330,16 @@ def main(argv=None):
             "flake8": run_flake8,
             "whitespace": run_whitespace,
         }
-        return checks[args.check](changed)
+        check = checks.get(args.check)
+        if check is None:
+            print(
+                "pre-commit check failed: unsupported check {}".format(
+                    args.check
+                ),
+                file=sys.stderr,
+            )
+            return 2
+        return check(changed)
     except (OSError, RuntimeError) as error:
         print("pre-commit check failed: {}".format(error), file=sys.stderr)
         return 2
