@@ -1,0 +1,4 @@
+[codespell]
+quiet-level = 2
+ignore-words-list = opengauss,psycopg,psycopg2,libpq,pyformat,ccompiler,hstore,tolen
+skip = .git,.pre-commit-venv,build,output,normalize,doc/COPYING.LESSER,doc/pep-0249.txt
