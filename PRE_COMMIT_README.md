@@ -29,7 +29,8 @@
 | YAML/JSON/TOML | 本次涉及的配置文件 | 校验语法 |
 | 合并标记、大小写冲突、私钥、大文件 | 本次提交 | 报告错误 |
 
-测试和示例目录不执行 Bandit；`tests/dbapi20.py` 继续沿用 `tox.ini` 中的 Flake8 豁免。
+测试和示例目录不执行 Bandit 和 Mypy；`tests/dbapi20.py` 继续沿用 `tox.ini` 中的
+Flake8 豁免。
 `scripts/build/appveyor.py` 中包含仓库已有的测试私钥夹具，因此只对该文件豁免私钥检测。
 
 ## 首次安装

@@ -58,7 +58,7 @@ repos:
         entry: .pre-commit-venv/bin/python scripts/pre_commit_checks.py bandit
         language: system
         types: [python]
-        files: '^(lib/|opensearch_sdk/opensearch_sdk/|scripts/|setup\.py$)'
+        files: '^(lib/|opensearch_sdk/opensearch_sdk/|opensearch_sdk/setup\.py$|scripts/|setup\.py$)'
         exclude: '(^|/)(tests|examples)/'
         require_serial: true
 
@@ -67,6 +67,6 @@ repos:
         entry: .pre-commit-venv/bin/python scripts/pre_commit_checks.py mypy
         language: system
         types: [python]
-        files: '^(lib/|opensearch_sdk/opensearch_sdk/|scripts/|setup\.py$)'
+        files: '^(lib/|opensearch_sdk/opensearch_sdk/|opensearch_sdk/setup\.py$|scripts/|setup\.py$)'
         exclude: '(^|/)(tests|examples)/'
         require_serial: true
