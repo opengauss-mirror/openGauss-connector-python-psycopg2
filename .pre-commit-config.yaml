@@ -7,7 +7,7 @@
 default_language_version:
   python: python3
 
-exclude: '^(\.pre-commit-venv|build|output|normalize)/'
+exclude: '^(\.mypy_cache|\.pre-commit-venv|build|output|normalize)/'
 
 repos:
   - repo: https://gitcode.com/gh_mirrors/pr/pre-commit-hooks.git
@@ -56,6 +56,15 @@ repos:
       - id: bandit-changed-lines
         name: bandit (changed production Python lines)
         entry: .pre-commit-venv/bin/python scripts/pre_commit_checks.py bandit
+        language: system
+        types: [python]
+        files: '^(lib/|opensearch_sdk/opensearch_sdk/|scripts/|setup\.py$)'
+        exclude: '(^|/)(tests|examples)/'
+        require_serial: true
+
+      - id: mypy-changed-lines
+        name: mypy (changed production Python lines, Python 3.9)
+        entry: .pre-commit-venv/bin/python scripts/pre_commit_checks.py mypy
         language: system
         types: [python]
         files: '^(lib/|opensearch_sdk/opensearch_sdk/|scripts/|setup\.py$)'

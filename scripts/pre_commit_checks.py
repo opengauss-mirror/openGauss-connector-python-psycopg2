@@ -250,6 +250,54 @@ def run_bandit(changed):
     return 0
 
 
+def run_mypy(changed):
+    """Report Mypy findings whose source line is in the current diff."""
+    filenames = [name for name, lines in changed.items() if lines]
+    if not filenames:
+        return 0
+
+    result = run(
+        [
+            executable("mypy"),
+            "--config-file",
+            "mypy.ini",
+            "--show-column-numbers",
+            "--no-color-output",
+            "--no-error-summary",
+            "--no-pretty",
+        ]
+        + filenames
+    )
+    if result.returncode not in (0, 1):
+        print_tool_failure(result)
+        return result.returncode
+
+    findings = []
+    unparsed = []
+    finding_re = re.compile(
+        r"^(?P<path>.*?):(?P<line>\d+)(?::\d+)?: "
+        r"(?:error|note): .*$"
+    )
+    for output_line in result.stdout.splitlines():
+        match = finding_re.match(output_line)
+        if not match:
+            if output_line.strip():
+                unparsed.append(output_line)
+            continue
+        filename = normalize_path(match.group("path"))
+        row = int(match.group("line"))
+        if row in changed.get(filename, set()):
+            findings.append(output_line)
+
+    if unparsed:
+        print("\n".join(unparsed))
+        return 1
+    if findings:
+        print("\n".join(findings))
+        return 1
+    return 0
+
+
 def split_line_ending(line):
     """Split a byte line into content and its original line ending."""
     if line.endswith(b"\r\n"):
@@ -314,7 +362,8 @@ def run_whitespace(changed):
 def parse_args(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "check", choices=("bandit", "codespell", "flake8", "whitespace")
+        "check",
+        choices=("bandit", "codespell", "flake8", "mypy", "whitespace"),
     )
     parser.add_argument("filenames", nargs="*")
     return parser.parse_args(argv)
@@ -328,6 +377,7 @@ def main(argv=None):
             "bandit": run_bandit,
             "codespell": run_codespell,
             "flake8": run_flake8,
+            "mypy": run_mypy,
             "whitespace": run_whitespace,
         }
         check = checks.get(args.check)

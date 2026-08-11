@@ -11,8 +11,9 @@
 3. openGauss 其他仓库共用的文件卫生、安全和安装方式。
 4. 存量代码基线。可能被存量问题影响的检查只报告相对 `HEAD` 新增或修改的行。
 
-因此，本仓库没有直接启用 oGMemory 使用的 Ruff、Mypy 和 Black/Darker，也没有在缺少
-`.clang-format` 标准的情况下强制格式化 C/C++ 代码。
+因此，本仓库没有直接启用 oGMemory 使用的 Ruff 和 Black/Darker，也没有在缺少
+`.clang-format` 标准的情况下强制格式化 C/C++ 代码。Mypy 参考 DBMind 的渐进式方案，
+按 Python 3.9 基准检查生产代码的本次修改行，不追溯阻塞存量类型问题。
 
 ## 已启用的检查
 
@@ -24,6 +25,7 @@
 | Flake8 | 本次修改的 Python 行 | 使用 `tox.ini` 中的现有规则 |
 | Codespell | 本次修改的源码和文档行 | 报告疑似拼写错误 |
 | Bandit | 本次修改的生产 Python 行 | 报告中高风险且高置信度问题 |
+| Mypy | 本次修改的生产 Python 行 | 按 Python 3.9 基准报告类型问题 |
 | YAML/JSON/TOML | 本次涉及的配置文件 | 校验语法 |
 | 合并标记、大小写冲突、私钥、大文件 | 本次提交 | 报告错误 |
 
@@ -47,6 +49,8 @@ PIP_MIRROR=https://pypi.tuna.tsinghua.edu.cn/simple bash setup-pre-commit.sh
 
 脚本会把工具安装到 `.pre-commit-venv/`，不会修改全局 pip 配置，也不要求手动激活虚拟
 环境。工具环境需要 Python 3.10+，这不会改变驱动业务代码对 Python 3.6+ 的兼容要求。
+Mypy 的 Python 3.9 设置是静态类型检查基准，不代表驱动取消 Python 3.6～3.8 支持；其
+版本固定为 1.19.1，避免新版 Mypy 不再接受 Python 3.9 检查目标。
 
 ## 日常使用
 
@@ -77,9 +81,9 @@ git commit -m "your message"
 .pre-commit-venv/bin/pre-commit run --all-files
 ```
 
-其中 Flake8、Codespell、Bandit 和行尾空格检查仍只处理相对 `HEAD` 发生变化的行，避免
-存量问题阻塞提交。其他通用钩子会检查全部指定文件，因此执行 `--all-files` 前建议保持
-工作区干净并先查看 `git status`。若需要查看全仓 Flake8 基线，可以单独执行：
+其中 Flake8、Codespell、Bandit、Mypy 和行尾空格检查仍只处理相对 `HEAD` 发生变化的
+行，避免存量问题阻塞提交。其他通用钩子会检查全部指定文件，因此执行 `--all-files` 前
+建议保持工作区干净并先查看 `git status`。若需要查看全仓 Flake8 基线，可以单独执行：
 
 ```bash
 .pre-commit-venv/bin/flake8 .
@@ -90,7 +94,7 @@ git commit -m "your message"
 优先只跳过确定需要放行的检查：
 
 ```bash
-SKIP=codespell-changed-lines git commit -m "your message"
+SKIP=mypy-changed-lines git commit -m "your message"
 ```
 
 紧急情况下可跳过全部检查：

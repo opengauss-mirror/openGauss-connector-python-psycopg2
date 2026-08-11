@@ -11,3 +11,4 @@ normalize/*
 
 # Local environment created by setup-pre-commit.sh
 .pre-commit-venv/
+.mypy_cache/

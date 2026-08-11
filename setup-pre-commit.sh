@@ -5,6 +5,7 @@ set -euo pipefail
 PIP_MIRROR="${PIP_MIRROR:-https://mirrors.aliyun.com/pypi/simple/}"
 VENV_DIR=".pre-commit-venv"
 PRE_COMMIT_VERSION="4.6.1"
+MYPY_VERSION="1.19.1"
 
 log() { printf '\033[1;32m[setup]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -58,7 +59,8 @@ log "install pinned pre-commit tools"
   "pre-commit==$PRE_COMMIT_VERSION" \
   "flake8==7.3.0" \
   "codespell==2.4.1" \
-  "bandit[toml]==1.9.4"
+  "bandit[toml]==1.9.4" \
+  "mypy==$MYPY_VERSION"
 
 PRE_COMMIT="$VENV_DIR/bin/pre-commit"
 "$PRE_COMMIT" validate-config .pre-commit-config.yaml
