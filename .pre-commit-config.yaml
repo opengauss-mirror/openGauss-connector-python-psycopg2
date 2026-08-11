@@ -1,0 +1,63 @@
+# Local commit checks for openGauss-connector-python-psycopg2.
+#
+# The repository contains substantial legacy C and Python code. Checks that
+# would otherwise report existing debt are filtered to lines changed from HEAD.
+# Python lint rules continue to come from the existing tox.ini [flake8] section.
+
+default_language_version:
+  python: python3
+
+exclude: '^(\.pre-commit-venv|build|output|normalize)/'
+
+repos:
+  - repo: https://gitcode.com/gh_mirrors/pr/pre-commit-hooks.git
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: check-ast
+      - id: check-case-conflict
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-toml
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: detect-private-key
+        # The repository already contains a historical test key fixture.
+        exclude: '^scripts/build/appveyor\.py$'
+
+  - repo: local
+    hooks:
+      - id: trailing-whitespace-changed-lines
+        name: trailing whitespace (changed lines)
+        entry: .pre-commit-venv/bin/python scripts/pre_commit_checks.py whitespace
+        language: system
+        types: [text]
+        require_serial: true
+
+      - id: flake8-changed-lines
+        name: flake8 (changed Python lines)
+        entry: .pre-commit-venv/bin/python scripts/pre_commit_checks.py flake8
+        language: system
+        types: [python]
+        exclude: '^tests/dbapi20\.py$'
+        require_serial: true
+
+      - id: codespell-changed-lines
+        name: codespell (changed text lines)
+        entry: .pre-commit-venv/bin/python scripts/pre_commit_checks.py codespell
+        language: system
+        types: [text]
+        files: '(^|/)(Makefile|CMakeLists\.txt|.*\.(c|cc|cfg|cmake|cpp|cxx|h|hh|hpp|ini|md|py|rst|sh|toml|txt|ya?ml))$'
+        exclude: '^(doc/COPYING\.LESSER|doc/pep-0249\.txt)$'
+        require_serial: true
+
+      - id: bandit-changed-lines
+        name: bandit (changed production Python lines)
+        entry: .pre-commit-venv/bin/python scripts/pre_commit_checks.py bandit
+        language: system
+        types: [python]
+        files: '^(lib/|opensearch_sdk/opensearch_sdk/|scripts/|setup\.py$)'
+        exclude: '(^|/)(tests|examples)/'
+        require_serial: true

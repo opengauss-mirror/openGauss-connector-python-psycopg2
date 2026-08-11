@@ -112,3 +112,4 @@ conn = psycopg2.connect(host="ip1[,ip2]",
 2. 新建 Feat_xxx 分支
 3. 提交代码
 4. 新建 Pull Request
+5. 提交前检查请参阅 [PRE_COMMIT_README.md](PRE_COMMIT_README.md)
