@@ -115,6 +115,41 @@ def print_tool_failure(result):
         print(result.stderr.rstrip(), file=sys.stderr)
 
 
+def report_changed_line_findings(
+    output, changed, finding_re, ignored_line=None
+):
+    """Report parsed diagnostics which point to lines in the current diff."""
+    findings = []
+    unparsed = []
+    for output_line in output.splitlines():
+        if ignored_line is not None and ignored_line(output_line):
+            continue
+        match = finding_re.match(output_line)
+        if not match:
+            if output_line.strip():
+                unparsed.append(output_line)
+            continue
+        filename = normalize_path(match.group("path"))
+        row = int(match.group("line"))
+        if row in changed.get(filename, set()):
+            findings.append(output_line)
+
+    if unparsed:
+        print("\n".join(unparsed))
+        return 1
+    if findings:
+        print("\n".join(findings))
+        return 1
+    return 0
+
+
+def is_codespell_context_line(output_line):
+    """Return whether a Codespell output line only describes its context."""
+    return output_line == "Used config files:" or bool(
+        re.match(r"^\s+\d+: ", output_line)
+    )
+
+
 def run_flake8(changed):
     """Report Flake8 findings whose source line is in the current diff."""
     filenames = [name for name, lines in changed.items() if lines]
@@ -168,31 +203,10 @@ def run_codespell(changed):
         print_tool_failure(result)
         return result.returncode
 
-    findings = []
-    unparsed = []
     finding_re = re.compile(r"^(?P<path>.*):(?P<line>\d+): (?P<message>.*)$")
-    for output_line in result.stdout.splitlines():
-        if output_line == "Used config files:" or re.match(
-            r"^\s+\d+: ", output_line
-        ):
-            continue
-        match = finding_re.match(output_line)
-        if not match:
-            if output_line.strip():
-                unparsed.append(output_line)
-            continue
-        filename = normalize_path(match.group("path"))
-        row = int(match.group("line"))
-        if row in changed.get(filename, set()):
-            findings.append(output_line)
-
-    if unparsed:
-        print("\n".join(unparsed))
-        return 1
-    if findings:
-        print("\n".join(findings))
-        return 1
-    return 0
+    return report_changed_line_findings(
+        result.stdout, changed, finding_re, is_codespell_context_line
+    )
 
 
 def run_bandit(changed):
@@ -272,30 +286,11 @@ def run_mypy(changed):
         print_tool_failure(result)
         return result.returncode
 
-    findings = []
-    unparsed = []
     finding_re = re.compile(
         r"^(?P<path>.*?):(?P<line>\d+)(?::\d+)?: "
         r"(?:error|note): .*$"
     )
-    for output_line in result.stdout.splitlines():
-        match = finding_re.match(output_line)
-        if not match:
-            if output_line.strip():
-                unparsed.append(output_line)
-            continue
-        filename = normalize_path(match.group("path"))
-        row = int(match.group("line"))
-        if row in changed.get(filename, set()):
-            findings.append(output_line)
-
-    if unparsed:
-        print("\n".join(unparsed))
-        return 1
-    if findings:
-        print("\n".join(findings))
-        return 1
-    return 0
+    return report_changed_line_findings(result.stdout, changed, finding_re)
 
 
 def split_line_ending(line):
