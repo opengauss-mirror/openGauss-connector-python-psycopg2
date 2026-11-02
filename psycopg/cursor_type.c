@@ -42,6 +42,166 @@
 
 /** DBAPI methods **/
 
+static int
+curs_validate_batch_size(cursorObject *self, int nParams, int nBatch,
+                         Py_ssize_t *total)
+{
+    if (nParams < 0 || nBatch < 0) {
+        psyco_set_error(DataError, self,
+            "nParams and nBatch must not be negative");
+        return -1;
+    }
+
+    if (nParams != 0 && nBatch > PY_SSIZE_T_MAX / nParams) {
+        psyco_set_error(DataError, self,
+            "batch parameter count overflow");
+        return -1;
+    }
+
+    *total = (Py_ssize_t)nBatch * (Py_ssize_t)nParams;
+    if (*total > PY_SSIZE_T_MAX / (Py_ssize_t)sizeof(char *)) {
+        psyco_set_error(DataError, self,
+            "batch parameter allocation size overflow");
+        return -1;
+    }
+
+    return 0;
+}
+
+static void
+curs_set_batch_parameter_error(cursorObject *self)
+{
+    if (!PyErr_Occurred()) {
+        psyco_set_error(DataError, self, "failed to get batch parameter");
+    }
+}
+
+static int
+curs_append_escaped_identifier(connectionObject *conn, const char *part,
+                               Py_ssize_t part_len, char **buffer,
+                               Py_ssize_t *buffer_len)
+{
+    char *quoted = NULL;
+    char *tmp = NULL;
+    Py_ssize_t quoted_len;
+    Py_ssize_t new_len;
+
+    quoted = psyco_escape_identifier(conn, part, part_len);
+    if (!quoted) {
+        return -1;
+    }
+
+    quoted_len = strlen(quoted);
+    new_len = *buffer_len + quoted_len + (*buffer_len ? 1 : 0) + 1;
+    if (new_len < *buffer_len || new_len > PY_SSIZE_T_MAX) {
+        PQfreemem(quoted);
+        PyErr_NoMemory();
+        return -1;
+    }
+
+    tmp = PyMem_Realloc(*buffer, new_len);
+    if (!tmp) {
+        PQfreemem(quoted);
+        PyErr_NoMemory();
+        return -1;
+    }
+
+    *buffer = tmp;
+    if (*buffer_len) {
+        (*buffer)[(*buffer_len)++] = '.';
+    }
+    memcpy(*buffer + *buffer_len, quoted, quoted_len);
+    *buffer_len += quoted_len;
+    (*buffer)[*buffer_len] = '\0';
+    PQfreemem(quoted);
+    return 0;
+}
+
+static char *
+curs_escape_qualified_identifier(connectionObject *conn, const char *name,
+                                 Py_ssize_t len)
+{
+    const char *part = name;
+    const char *end;
+    char *rv = NULL;
+    Py_ssize_t rv_len = 0;
+
+    if (len < 0) {
+        len = strlen(name);
+    }
+    end = name + len;
+    if (len <= 0) {
+        PyErr_SetString(ProgrammingError, "procedure name must not be empty");
+        return NULL;
+    }
+
+    while (part <= end) {
+        const char *dot = memchr(part, '.', end - part);
+        Py_ssize_t part_len = dot ? dot - part : end - part;
+        if (part_len <= 0) {
+            PyErr_SetString(ProgrammingError,
+                "procedure name contains an empty identifier part");
+            PyMem_Free(rv);
+            return NULL;
+        }
+        if (curs_append_escaped_identifier(conn, part, part_len,
+            &rv, &rv_len) < 0) {
+            PyMem_Free(rv);
+            return NULL;
+        }
+        if (!dot) {
+            break;
+        }
+        part = dot + 1;
+    }
+
+    return rv;
+}
+
+static int
+curs_is_safe_qualified_identifier(const char *name, Py_ssize_t len)
+{
+    const char *part = name;
+    const char *end;
+
+    if (len < 0) {
+        len = strlen(name);
+    }
+    end = name + len;
+    if (len <= 0) {
+        return 0;
+    }
+
+    while (part <= end) {
+        const char *dot = memchr(part, '.', end - part);
+        const char *p;
+        Py_ssize_t part_len = dot ? dot - part : end - part;
+
+        if (part_len <= 0) {
+            return 0;
+        }
+        if (!(('A' <= part[0] && part[0] <= 'Z') ||
+              ('a' <= part[0] && part[0] <= 'z') ||
+              part[0] == '_')) {
+            return 0;
+        }
+        for (p = part + 1; p < part + part_len; p++) {
+            if (!(('A' <= *p && *p <= 'Z') ||
+                  ('a' <= *p && *p <= 'z') ||
+                  ('0' <= *p && *p <= '9') ||
+                  *p == '_')) {
+                return 0;
+            }
+        }
+        if (!dot) {
+            break;
+        }
+        part = dot + 1;
+    }
+
+    return 1;
+}
+
 /* close method - close the cursor */
 
 #define curs_close_doc \
@@ -625,10 +785,14 @@ static PyObject *
 curs_execute_prepared_batch(cursorObject *self, PyObject *args)
 {
     const char *stmtName = NULL;
-    int nParams = 0, nBatch = 0;
+    int nParams = 0;
+    int nBatch = 0;
     PyObject *argsList = NULL;
 
-    int rowIdx, colIdx, total;
+    int rowIdx;
+    int colIdx;
+    Py_ssize_t total;
+    Py_ssize_t alloc_count;
     char **paramValues = NULL;
     PGresult *res = NULL;
 
@@ -642,7 +806,9 @@ curs_execute_prepared_batch(cursorObject *self, PyObject *args)
     }
     Dprintf("execute_prepared_batch parsed statement_name: %s, nParams: %d, nBatch: %d",
             stmtName, nParams, nBatch);
-    total = nBatch * nParams;
+    if (curs_validate_batch_size(self, nParams, nBatch, &total) < 0) {
+        goto exit;
+    }
 
     EXC_IF_CURS_CLOSED(self);
     EXC_IF_CURS_ASYNC(self, execute_prepared_batch);
@@ -654,19 +820,23 @@ curs_execute_prepared_batch(cursorObject *self, PyObject *args)
     }
 
     // allocate all memory
-    if (!(paramValues = (char**)malloc(sizeof(char*) * total))) {
+    alloc_count = total > 0 ? total : 1;
+    if (!(paramValues = (char**)malloc(sizeof(char*) * alloc_count))) {
         PyErr_NoMemory();
         goto exit;
     }
-    memset(paramValues, 0, sizeof(char *) * total);
+    memset(paramValues, 0, sizeof(char *) * alloc_count);
 
     if (!PySequence_Check(argsList)) {
         psyco_set_error(DataError, self, "expect varsList is a list");
         goto exit;
     }
 
-    for (rowIdx = 0; rowIdx < nBatch; rowIdx++) {
+    for (rowIdx = 0; rowIdx < nBatch && !PyErr_Occurred(); rowIdx++) {
         PyObject *rowArgs = PySequence_GetItem(argsList, rowIdx);
+        if (!rowArgs) {
+            goto exit;
+        }
 
         // Check if the inner object is a list
         if (!PySequence_Check(rowArgs)) {
@@ -677,36 +847,45 @@ curs_execute_prepared_batch(cursorObject *self, PyObject *args)
         // Loop through each row of parameters
         for (colIdx = 0; colIdx < nParams; colIdx++) {
             PyObject *argItem = PySequence_GetItem(rowArgs, colIdx);
+            if (!argItem) {
+                curs_set_batch_parameter_error(self);
+                break;
+            }
 
             if (argItem == Py_None) {
-                paramValues[rowIdx * nParams + colIdx] = NULL;
+                paramValues[(Py_ssize_t)rowIdx * nParams + colIdx] = NULL;
+                Py_XDECREF(argItem);
+                continue;
+            }
+            if (!(argItem = psyco_ensure_bytes(argItem))) {
+                break;
+            }
+            // convert empty string to NULL in A compatibility mode
+            if (self->conn->sql_compatibility == SQL_COMPATIBILITY_A && PyObject_Length(argItem) == 0) {
+                paramValues[(Py_ssize_t)rowIdx * nParams + colIdx] = NULL;
             } else {
-                if (!(argItem = psyco_ensure_bytes(argItem))) {
-                    goto exit;
-                }
-                // convert empty string to NULL in A compatibility mode
-                if (self->conn->sql_compatibility == SQL_COMPATIBILITY_A && PyObject_Length(argItem) == 0) {
-                    paramValues[rowIdx * nParams + colIdx] = NULL;
-                } else {
-                    paramValues[rowIdx * nParams + colIdx] = Bytes_AsString(argItem);
-                }
+                paramValues[(Py_ssize_t)rowIdx * nParams + colIdx] = Bytes_AsString(argItem);
             }
             Py_XDECREF(argItem);
         }
         Py_XDECREF(rowArgs);
     }
 
-    res = PQexecPreparedBatch(self->conn->pgconn, stmtName, nParams, nBatch,
-                                paramValues, NULL, NULL, 0);
-    conn_set_result(self->conn, res);
-    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
-        Dprintf("execute_prepared_batch error: %s", PQresultErrorMessage(res));
-        psyco_set_error(OperationalError, self, PQresultErrorMessage(res));
-        goto exit;
+    if (!PyErr_Occurred()) {
+        res = PQexecPreparedBatch(self->conn->pgconn, stmtName, nParams,
+            nBatch, paramValues, NULL, NULL, 0);
+        conn_set_result(self->conn, res);
+        if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+            Dprintf("execute_prepared_batch error: %s", PQresultErrorMessage(res));
+            psyco_set_error(OperationalError, self, PQresultErrorMessage(res));
+        }
     }
 
 exit:
     free(paramValues);
+    if (PyErr_Occurred()) {
+        return NULL;
+    }
     Py_RETURN_NONE;
 }
 
@@ -718,10 +897,14 @@ static PyObject *
 curs_execute_params_batch(cursorObject *self, PyObject *args)
 {
     const char *sql = NULL;
-    int nParams = 0, nBatch = 0;
+    int nParams = 0;
+    int nBatch = 0;
     PyObject *argsList = NULL;
 
-    int rowIdx, colIdx, total;
+    int rowIdx;
+    int colIdx;
+    Py_ssize_t total;
+    Py_ssize_t alloc_count;
     char **paramValues = NULL;
     PGresult *res = NULL;
 
@@ -735,7 +918,9 @@ curs_execute_params_batch(cursorObject *self, PyObject *args)
     Dprintf("execute_params_batch parsed sql: %s, nParams: %d, nBatch: %d",
             sql, nParams, nBatch);
 
-    total = nBatch * nParams;
+    if (curs_validate_batch_size(self, nParams, nBatch, &total) < 0) {
+        goto exit;
+    }
 
     EXC_IF_CURS_CLOSED(self);
     EXC_IF_CURS_ASYNC(self, execute_params_batch);
@@ -746,19 +931,23 @@ curs_execute_params_batch(cursorObject *self, PyObject *args)
         goto exit;
     }
 
-    if (!(paramValues = (char**)malloc(sizeof(char*) * total))) {
+    alloc_count = total > 0 ? total : 1;
+    if (!(paramValues = (char**)malloc(sizeof(char*) * alloc_count))) {
         PyErr_NoMemory();
         goto exit;
     }
-    memset(paramValues, 0, sizeof(char *) * total);
+    memset(paramValues, 0, sizeof(char *) * alloc_count);
 
     if (!PySequence_Check(argsList)) {
         psyco_set_error(DataError, self, "expect varsList is a list");
         goto exit;
     }
 
-    for (rowIdx = 0; rowIdx < nBatch; rowIdx++) {
+    for (rowIdx = 0; rowIdx < nBatch && !PyErr_Occurred(); rowIdx++) {
         PyObject *rowArgs = PySequence_GetItem(argsList, rowIdx);
+        if (!rowArgs) {
+            goto exit;
+        }
 
         // Check if the inner object is a list
         if (!PySequence_Check(rowArgs)) {
@@ -769,36 +958,45 @@ curs_execute_params_batch(cursorObject *self, PyObject *args)
         // Loop through each row of parameters
         for (colIdx = 0; colIdx < nParams; colIdx++) {
             PyObject *argItem = PySequence_GetItem(rowArgs, colIdx);
+            if (!argItem) {
+                curs_set_batch_parameter_error(self);
+                break;
+            }
 
             if (argItem == Py_None) {
-                paramValues[rowIdx * nParams + colIdx] = NULL;
+                paramValues[(Py_ssize_t)rowIdx * nParams + colIdx] = NULL;
+                Py_XDECREF(argItem);
+                continue;
+            }
+            if (!(argItem = psyco_ensure_bytes(argItem))) {
+                break;
+            }
+            // convert empty string to NULL in A compatibility mode
+            if (self->conn->sql_compatibility == SQL_COMPATIBILITY_A && PyObject_Length(argItem) == 0) {
+                paramValues[(Py_ssize_t)rowIdx * nParams + colIdx] = NULL;
             } else {
-                if (!(argItem = psyco_ensure_bytes(argItem))) {
-                    goto exit;
-                }
-                // convert empty string to NULL in A compatibility mode
-                if (self->conn->sql_compatibility == SQL_COMPATIBILITY_A && PyObject_Length(argItem) == 0) {
-                    paramValues[rowIdx * nParams + colIdx] = NULL;
-                } else {
-                    paramValues[rowIdx * nParams + colIdx] = Bytes_AsString(argItem);
-                }
+                paramValues[(Py_ssize_t)rowIdx * nParams + colIdx] = Bytes_AsString(argItem);
             }
             Py_XDECREF(argItem);
         }
         Py_XDECREF(rowArgs);
     }
 
-    res = PQexecParamsBatch(self->conn->pgconn, sql, nParams, nBatch, NULL,
-                            paramValues, NULL, NULL, 0);
-    conn_set_result(self->conn, res);
-    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
-        Dprintf("execute_params_batch error: %s", PQresultErrorMessage(res));
-        psyco_set_error(OperationalError, self, PQresultErrorMessage(res));
-        goto exit;
+    if (!PyErr_Occurred()) {
+        res = PQexecParamsBatch(self->conn->pgconn, sql, nParams, nBatch,
+            NULL, paramValues, NULL, NULL, 0);
+        conn_set_result(self->conn, res);
+        if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+            Dprintf("execute_params_batch error: %s", PQresultErrorMessage(res));
+            psyco_set_error(OperationalError, self, PQresultErrorMessage(res));
+        }
     }
 
 exit:
     free(paramValues);
+    if (PyErr_Occurred()) {
+        return NULL;
+    }
     Py_RETURN_NONE;
 }
 
@@ -1287,6 +1485,11 @@ exit:
 #define curs_callproc_doc \
 "callproc(procname, parameters=None) -- Execute stored procedure."
 
+#define CURS_CALLPROC_SQL_FIXED_LEN (sizeof("SELECT * FROM ") + sizeof("("))
+#define CURS_CALLPROC_NAMED_PARAM_LEN (sizeof(":=%s,") - sizeof(""))
+#define CURS_CALLPROC_POSITIONAL_PARAM_LEN (sizeof("%s,") - sizeof(""))
+#define CURS_CALLPROC_TRAILING_COMMA_LEN (sizeof(",") - sizeof(""))
+
 static PyObject *
 curs_callproc(cursorObject *self, PyObject *args)
 {
@@ -1296,6 +1499,7 @@ curs_callproc(cursorObject *self, PyObject *args)
     PyObject *parameters = Py_None;
     PyObject *operation = NULL;
     PyObject *res = NULL;
+    char *safe_procname = NULL;
 
     int using_dict;
     PyObject *pname = NULL;
@@ -1338,13 +1542,25 @@ curs_callproc(cursorObject *self, PyObject *args)
     }
 
     using_dict = nparameters > 0 && PyDict_Check(parameters);
+    if (curs_is_safe_qualified_identifier(procname, procname_len)) {
+        safe_procname = (char*)procname;
+    }
+    else {
+        safe_procname = curs_escape_qualified_identifier(self->conn,
+            procname, procname_len);
+        if (!safe_procname) {
+            goto exit;
+        }
+    }
 
     /* a Dict is complicated; the parameter names go into the query */
     if (using_dict) {
         if (!(pnames = PyDict_Keys(parameters))) { goto exit; }
         if (!(pvals = PyDict_Values(parameters))) { goto exit; }
 
-        sl = procname_len + 17 + nparameters * 5 - (nparameters ? 1 : 0);
+        sl = strlen(safe_procname) + CURS_CALLPROC_SQL_FIXED_LEN +
+            nparameters * CURS_CALLPROC_NAMED_PARAM_LEN -
+            (nparameters ? CURS_CALLPROC_TRAILING_COMMA_LEN : 0);
 
         if (!(scpnames = PyMem_New(char *, nparameters))) {
             PyErr_NoMemory();
@@ -1380,7 +1596,7 @@ curs_callproc(cursorObject *self, PyObject *args)
             goto exit;
         }
 
-        sprintf(sql, "SELECT * FROM %s(", procname);
+        sprintf(sql, "SELECT * FROM %s(", safe_procname);
         for (i = 0; i < nparameters; i++) {
             strcat(sql, scpnames[i]);
             strcat(sql, ":=%s,");
@@ -1394,7 +1610,9 @@ curs_callproc(cursorObject *self, PyObject *args)
         Py_INCREF(parameters);
         pvals = parameters;
 
-        sl = procname_len + 17 + nparameters * 3 - (nparameters ? 1 : 0);
+        sl = strlen(safe_procname) + CURS_CALLPROC_SQL_FIXED_LEN +
+            nparameters * CURS_CALLPROC_POSITIONAL_PARAM_LEN -
+            (nparameters ? CURS_CALLPROC_TRAILING_COMMA_LEN : 0);
 
         sql = (char*)PyMem_Malloc(sl);
         if (sql == NULL) {
@@ -1402,7 +1620,7 @@ curs_callproc(cursorObject *self, PyObject *args)
             goto exit;
         }
 
-        sprintf(sql, "SELECT * FROM %s(", procname);
+        sprintf(sql, "SELECT * FROM %s(", safe_procname);
         for (i = 0; i < nparameters; i++) {
             strcat(sql, "%s,");
         }
@@ -1440,6 +1658,9 @@ exit:
     Py_XDECREF(operation);
     Py_XDECREF(pvals);
     PyMem_Free((void*)sql);
+    if (safe_procname != procname) {
+        PyMem_Free(safe_procname);
+    }
     return res;
 }
 
