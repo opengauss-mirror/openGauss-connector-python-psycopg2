@@ -261,6 +261,195 @@ class TestExecuteValues(FastExecuteTestMixin, testutils.ConnectingTestCase):
         self.assertEqual(cur.fetchall(), [(1, 'hi')])
 
 
+class TestOpenGaussBatchApi(testutils.ConnectingTestCase):
+    def setUp(self):
+        super().setUp()
+        cur = self.conn.cursor()
+        if not (hasattr(cur, "execute_params_batch")
+                and hasattr(cur, "execute_prepared_batch")
+                and hasattr(cur, "prepare")):
+            self.skipTest("openGauss batch cursor APIs are unavailable")
+        cur.execute("create table test_batch_api (id int primary key, data text)")
+
+    def _batch_executor(self, prepared):
+        cur = self.conn.cursor()
+        query = "insert into test_batch_api (id, data) values ($1, $2)"
+        if prepared:
+            cur.prepare("test_batch_api_checked", query, 2)
+            return cur, lambda nparams, nbatch, rows: cur.execute_prepared_batch(
+                "test_batch_api_checked", nparams, nbatch, rows)
+        return cur, lambda nparams, nbatch, rows: cur.execute_params_batch(
+            query, nparams, nbatch, rows)
+
+    def _assert_no_batch_rows(self, cur):
+        # Client-side validation must leave the connection usable and send no rows.
+        cur.execute("select count(*) from test_batch_api")
+        self.assertEqual(cur.fetchone()[0], 0)
+
+    def test_both_apis_reject_short_sequences_without_writes(self):
+        for prepared in (False, True):
+            cur, execute = self._batch_executor(prepared)
+            for rows, nbatch in (([["1", "one"]], 2),
+                                 ([["1", "one"], ["2"]], 2)):
+                with self.subTest(prepared=prepared, rows=rows):
+                    with self.assertRaises(psycopg2.DataError):
+                        execute(2, nbatch, rows)
+                    self._assert_no_batch_rows(cur)
+
+    def test_both_apis_preserve_many_same_size_strings(self):
+        rows = [[str(i), "批量参数-%04d-" % i + "x" * 512]
+                for i in range(128)]
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                cur, execute = self._batch_executor(prepared)
+                execute(2, len(rows), rows)
+                cur.execute("select id, data from test_batch_api order by id")
+                self.assertEqual(cur.fetchall(),
+                                 [(int(row[0]), row[1]) for row in rows])
+                cur.execute("delete from test_batch_api")
+
+    def test_both_apis_preserve_bytes_null_and_empty(self):
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                cur, execute = self._batch_executor(prepared)
+                cur.execute("show sql_compatibility")
+                empty = None if cur.fetchone()[0].upper() == "A" else ""
+                rows = [[b"1", "字节参数".encode("utf-8")],
+                        [b"2", None], [b"3", b""], [b"4", ""]]
+                execute(2, len(rows), rows)
+                cur.execute("select id, data from test_batch_api order by id")
+                self.assertEqual(cur.fetchall(),
+                                 [(1, "字节参数"), (2, None), (3, empty), (4, empty)])
+                cur.execute("delete from test_batch_api")
+
+    def test_both_apis_release_invalid_row_references(self):
+        import sys
+
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                cur, execute = self._batch_executor(prepared)
+                bad_row = object()
+                rows = [["1", "valid"], bad_row]
+                references = sys.getrefcount(bad_row)
+                with self.assertRaises(psycopg2.DataError):
+                    execute(2, 2, rows)
+                self.assertEqual(sys.getrefcount(bad_row), references)
+                self._assert_no_batch_rows(cur)
+
+    def test_both_apis_reject_invalid_parameter_types(self):
+        for prepared in (False, True):
+            cur, execute = self._batch_executor(prepared)
+            for value in (1, object(), [], {}):
+                with self.subTest(prepared=prepared, value_type=type(value)):
+                    with self.assertRaises(TypeError):
+                        execute(2, 2, [["1", "valid"], ["2", value]])
+                    self._assert_no_batch_rows(cur)
+
+    def test_both_apis_reject_invalid_batch_sizes(self):
+        for prepared in (False, True):
+            cur, execute = self._batch_executor(prepared)
+            for nparams, nbatch in ((-1, 1), (2, -1), (2147483647, 2147483647)):
+                with self.subTest(prepared=prepared, nparams=nparams, nbatch=nbatch):
+                    with self.assertRaises(psycopg2.DataError):
+                        execute(nparams, nbatch, [])
+                    self._assert_no_batch_rows(cur)
+
+    def test_both_apis_propagate_sequence_errors(self):
+        class FailingSequence:
+            def __init__(self, first):
+                self.first = first
+
+            def __len__(self):
+                return 2
+
+            def __getitem__(self, index):
+                if index == 0:
+                    return self.first
+                raise RuntimeError("batch sequence failed")
+
+        for prepared in (False, True):
+            cur, execute = self._batch_executor(prepared)
+            cases = [(FailingSequence(["1", "valid"]), 2),
+                     ([FailingSequence("1")], 1)]
+            for rows, nbatch in cases:
+                with self.subTest(prepared=prepared, nbatch=nbatch):
+                    with self.assertRaisesRegex(RuntimeError, "batch sequence failed"):
+                        execute(2, nbatch, rows)
+                    self._assert_no_batch_rows(cur)
+
+    def test_extras_batch_wrappers(self):
+        rows = [(i, "包装接口-%d" % i) for i in range(9)]
+        query = "insert into test_batch_api (id, data) values ($1, $2)"
+        for prepared in (False, True):
+            with self.subTest(prepared=prepared):
+                cur = self.conn.cursor()
+                if prepared:
+                    cur.prepare("test_batch_api_wrapper", query, 2)
+                    psycopg2.extras.execute_prepared_batch(
+                        cur, "test_batch_api_wrapper", rows, page_size=3)
+                else:
+                    psycopg2.extras.execute_params_batch(cur, query, rows, page_size=3)
+                cur.execute("select id, data from test_batch_api order by id")
+                self.assertEqual(cur.fetchall(), rows)
+                cur.execute("delete from test_batch_api")
+
+    def test_params_batch_preserves_unicode_values(self):
+        cur = self.conn.cursor()
+        rows = [
+            [str(i), f"批量值-{i}-" + ("x" * (i + 1))]
+            for i in range(32)
+        ]
+
+        cur.execute_params_batch(
+            "insert into test_batch_api (id, data) values ($1, $2)",
+            2, len(rows), rows,
+        )
+        cur.execute("select id, data from test_batch_api order by id")
+
+        self.assertEqual(
+            cur.fetchall(),
+            [(int(row[0]), row[1]) for row in rows],
+        )
+
+    def test_prepared_batch_preserves_unicode_values(self):
+        cur = self.conn.cursor()
+        rows = [["1", "准备语句-一"], ["2", "准备语句-二"]]
+        cur.prepare(
+            "test_batch_api_insert",
+            "insert into test_batch_api (id, data) values ($1, $2)",
+            2,
+        )
+
+        cur.execute_prepared_batch(
+            "test_batch_api_insert", 2, len(rows), rows,
+        )
+        cur.execute("select id, data from test_batch_api order by id")
+
+        self.assertEqual(cur.fetchall(), [(1, rows[0][1]), (2, rows[1][1])])
+
+    def test_params_batch_rejects_short_outer_sequence(self):
+        cur = self.conn.cursor()
+
+        with self.assertRaises(psycopg2.DataError):
+            cur.execute_params_batch(
+                "insert into test_batch_api (id, data) values ($1, $2)",
+                2, 2, [["1", "one"]],
+            )
+
+    def test_prepared_batch_rejects_short_rows(self):
+        cur = self.conn.cursor()
+        cur.prepare(
+            "test_batch_api_short_row",
+            "insert into test_batch_api (id, data) values ($1, $2)",
+            2,
+        )
+
+        with self.assertRaises(psycopg2.DataError):
+            cur.execute_prepared_batch(
+                "test_batch_api_short_row", 2, 1, [["1"]],
+            )
+
+
 def test_suite():
     return unittest.TestLoader().loadTestsFromName(__name__)
 
