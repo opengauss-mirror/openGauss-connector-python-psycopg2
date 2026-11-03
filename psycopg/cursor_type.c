@@ -76,6 +76,36 @@ curs_set_batch_parameter_error(cursorObject *self)
     }
 }
 
+/* Convert a single batch parameter into paramValues[flatIdx], moving
+ * ownership of argItem into paramOwners[flatIdx] so its backing buffer
+ * stays alive until the batch call that reads paramValues has returned.
+ *
+ * Always consumes a reference to argItem. Returns 0 on success, -1 on
+ * failure (with a Python exception already set).
+ */
+static int
+curs_batch_store_param(cursorObject *self, PyObject *argItem, Py_ssize_t flatIdx,
+                       const char **paramValues, PyObject **paramOwners)
+{
+    if (argItem == Py_None) {
+        paramValues[flatIdx] = NULL;
+        Py_XDECREF(argItem);
+        return 0;
+    }
+
+    if (!(argItem = psyco_ensure_bytes(argItem))) {
+        return -1;
+    }
+    // convert empty string to NULL in A compatibility mode
+    if (self->conn->sql_compatibility == SQL_COMPATIBILITY_A && PyObject_Length(argItem) == 0) {
+        paramValues[flatIdx] = NULL;
+    } else {
+        paramValues[flatIdx] = Bytes_AsString(argItem);
+    }
+    paramOwners[flatIdx] = argItem;
+    return 0;
+}
+
 static int
 curs_append_escaped_identifier(connectionObject *conn, const char *part,
                                Py_ssize_t part_len, char **buffer,
@@ -789,11 +819,15 @@ curs_execute_prepared_batch(cursorObject *self, PyObject *args)
     int nBatch = 0;
     PyObject *argsList = NULL;
 
-    int rowIdx;
-    int colIdx;
+    Py_ssize_t rowIdx;
+    Py_ssize_t colIdx;
     Py_ssize_t total;
-    Py_ssize_t alloc_count;
-    char **paramValues = NULL;
+    Py_ssize_t flatIdx;
+    Py_ssize_t ownerIdx;
+    Py_ssize_t argsLen;
+    Py_ssize_t rowLen;
+    const char **paramValues = NULL;
+    PyObject **paramOwners = NULL;
     PGresult *res = NULL;
 
     /* reset rowcount to -1 to avoid setting it when an exception is raised */
@@ -819,17 +853,31 @@ curs_execute_prepared_batch(cursorObject *self, PyObject *args)
         goto exit;
     }
 
-    // allocate all memory
-    alloc_count = total > 0 ? total : 1;
-    if (!(paramValues = (char**)malloc(sizeof(char*) * alloc_count))) {
-        PyErr_NoMemory();
-        goto exit;
-    }
-    memset(paramValues, 0, sizeof(char *) * alloc_count);
-
     if (!PySequence_Check(argsList)) {
         psyco_set_error(DataError, self, "expect varsList is a list");
         goto exit;
+    }
+    if ((argsLen = PySequence_Size(argsList)) < 0) {
+        goto exit;
+    }
+    if (argsLen < (Py_ssize_t)nBatch) {
+        psyco_set_error(DataError, self, "varsList length is less than nBatch");
+        goto exit;
+    }
+
+    // allocate all memory
+    if (total > 0) {
+        if (!(paramValues = (const char**)malloc(sizeof(*paramValues) * total))) {
+            PyErr_NoMemory();
+            goto exit;
+        }
+        memset(paramValues, 0, sizeof(*paramValues) * total);
+
+        if (!(paramOwners = (PyObject**)malloc(sizeof(PyObject*) * total))) {
+            PyErr_NoMemory();
+            goto exit;
+        }
+        memset(paramOwners, 0, sizeof(PyObject *) * total);
     }
 
     for (rowIdx = 0; rowIdx < nBatch && !PyErr_Occurred(); rowIdx++) {
@@ -841,32 +889,33 @@ curs_execute_prepared_batch(cursorObject *self, PyObject *args)
         // Check if the inner object is a list
         if (!PySequence_Check(rowArgs)) {
             psyco_set_error(DataError, self, "expect every item in varsList is a list");
+            Py_XDECREF(rowArgs);
+            goto exit;
+        }
+        if ((rowLen = PySequence_Size(rowArgs)) < 0) {
+            Py_XDECREF(rowArgs);
+            goto exit;
+        }
+        if (rowLen < (Py_ssize_t)nParams) {
+            psyco_set_error(DataError, self, "varsList row length is less than nParams");
+            Py_XDECREF(rowArgs);
             goto exit;
         }
 
         // Loop through each row of parameters
         for (colIdx = 0; colIdx < nParams; colIdx++) {
             PyObject *argItem = PySequence_GetItem(rowArgs, colIdx);
+            flatIdx = rowIdx * (Py_ssize_t)nParams + colIdx;
+
             if (!argItem) {
-                curs_set_batch_parameter_error(self);
-                break;
+                Py_XDECREF(rowArgs);
+                goto exit;
             }
 
-            if (argItem == Py_None) {
-                paramValues[(Py_ssize_t)rowIdx * nParams + colIdx] = NULL;
-                Py_XDECREF(argItem);
-                continue;
+            if (curs_batch_store_param(self, argItem, flatIdx, paramValues, paramOwners) < 0) {
+                Py_XDECREF(rowArgs);
+                goto exit;
             }
-            if (!(argItem = psyco_ensure_bytes(argItem))) {
-                break;
-            }
-            // convert empty string to NULL in A compatibility mode
-            if (self->conn->sql_compatibility == SQL_COMPATIBILITY_A && PyObject_Length(argItem) == 0) {
-                paramValues[(Py_ssize_t)rowIdx * nParams + colIdx] = NULL;
-            } else {
-                paramValues[(Py_ssize_t)rowIdx * nParams + colIdx] = Bytes_AsString(argItem);
-            }
-            Py_XDECREF(argItem);
         }
         Py_XDECREF(rowArgs);
     }
@@ -882,6 +931,12 @@ curs_execute_prepared_batch(cursorObject *self, PyObject *args)
     }
 
 exit:
+    if (paramOwners) {
+        for (ownerIdx = 0; ownerIdx < total; ownerIdx++) {
+            Py_XDECREF(paramOwners[ownerIdx]);
+        }
+    }
+    free(paramOwners);
     free(paramValues);
     if (PyErr_Occurred()) {
         return NULL;
@@ -901,11 +956,15 @@ curs_execute_params_batch(cursorObject *self, PyObject *args)
     int nBatch = 0;
     PyObject *argsList = NULL;
 
-    int rowIdx;
-    int colIdx;
+    Py_ssize_t rowIdx;
+    Py_ssize_t colIdx;
     Py_ssize_t total;
-    Py_ssize_t alloc_count;
-    char **paramValues = NULL;
+    Py_ssize_t flatIdx;
+    Py_ssize_t ownerIdx;
+    Py_ssize_t argsLen;
+    Py_ssize_t rowLen;
+    const char **paramValues = NULL;
+    PyObject **paramOwners = NULL;
     PGresult *res = NULL;
 
     self->rowcount = -1;
@@ -931,16 +990,30 @@ curs_execute_params_batch(cursorObject *self, PyObject *args)
         goto exit;
     }
 
-    alloc_count = total > 0 ? total : 1;
-    if (!(paramValues = (char**)malloc(sizeof(char*) * alloc_count))) {
-        PyErr_NoMemory();
-        goto exit;
-    }
-    memset(paramValues, 0, sizeof(char *) * alloc_count);
-
     if (!PySequence_Check(argsList)) {
         psyco_set_error(DataError, self, "expect varsList is a list");
         goto exit;
+    }
+    if ((argsLen = PySequence_Size(argsList)) < 0) {
+        goto exit;
+    }
+    if (argsLen < (Py_ssize_t)nBatch) {
+        psyco_set_error(DataError, self, "varsList length is less than nBatch");
+        goto exit;
+    }
+
+    if (total > 0) {
+        if (!(paramValues = (const char**)malloc(sizeof(*paramValues) * total))) {
+            PyErr_NoMemory();
+            goto exit;
+        }
+        memset(paramValues, 0, sizeof(*paramValues) * total);
+
+        if (!(paramOwners = (PyObject**)malloc(sizeof(PyObject*) * total))) {
+            PyErr_NoMemory();
+            goto exit;
+        }
+        memset(paramOwners, 0, sizeof(PyObject *) * total);
     }
 
     for (rowIdx = 0; rowIdx < nBatch && !PyErr_Occurred(); rowIdx++) {
@@ -952,32 +1025,33 @@ curs_execute_params_batch(cursorObject *self, PyObject *args)
         // Check if the inner object is a list
         if (!PySequence_Check(rowArgs)) {
             psyco_set_error(DataError, self, "expect every item in varsList is a list");
+            Py_XDECREF(rowArgs);
+            goto exit;
+        }
+        if ((rowLen = PySequence_Size(rowArgs)) < 0) {
+            Py_XDECREF(rowArgs);
+            goto exit;
+        }
+        if (rowLen < (Py_ssize_t)nParams) {
+            psyco_set_error(DataError, self, "varsList row length is less than nParams");
+            Py_XDECREF(rowArgs);
             goto exit;
         }
 
         // Loop through each row of parameters
         for (colIdx = 0; colIdx < nParams; colIdx++) {
             PyObject *argItem = PySequence_GetItem(rowArgs, colIdx);
+            flatIdx = rowIdx * (Py_ssize_t)nParams + colIdx;
+
             if (!argItem) {
-                curs_set_batch_parameter_error(self);
-                break;
+                Py_XDECREF(rowArgs);
+                goto exit;
             }
 
-            if (argItem == Py_None) {
-                paramValues[(Py_ssize_t)rowIdx * nParams + colIdx] = NULL;
-                Py_XDECREF(argItem);
-                continue;
+            if (curs_batch_store_param(self, argItem, flatIdx, paramValues, paramOwners) < 0) {
+                Py_XDECREF(rowArgs);
+                goto exit;
             }
-            if (!(argItem = psyco_ensure_bytes(argItem))) {
-                break;
-            }
-            // convert empty string to NULL in A compatibility mode
-            if (self->conn->sql_compatibility == SQL_COMPATIBILITY_A && PyObject_Length(argItem) == 0) {
-                paramValues[(Py_ssize_t)rowIdx * nParams + colIdx] = NULL;
-            } else {
-                paramValues[(Py_ssize_t)rowIdx * nParams + colIdx] = Bytes_AsString(argItem);
-            }
-            Py_XDECREF(argItem);
         }
         Py_XDECREF(rowArgs);
     }
@@ -993,6 +1067,12 @@ curs_execute_params_batch(cursorObject *self, PyObject *args)
     }
 
 exit:
+    if (paramOwners) {
+        for (ownerIdx = 0; ownerIdx < total; ownerIdx++) {
+            Py_XDECREF(paramOwners[ownerIdx]);
+        }
+    }
+    free(paramOwners);
     free(paramValues);
     if (PyErr_Occurred()) {
         return NULL;
