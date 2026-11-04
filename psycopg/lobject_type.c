@@ -134,7 +134,7 @@ psyco_lobj_read(lobjectObject *self, PyObject *args)
         if ((where = lobject_tell(self)) < 0) return NULL;
         if ((end = lobject_seek(self, 0, SEEK_END)) < 0) return NULL;
         if (lobject_seek(self, where, SEEK_SET) < 0) return NULL;
-        size = end - where;
+        size = end > where ? end - where : 0;
     }
 
     if ((buffer = PyMem_Malloc(size)) == NULL) {
