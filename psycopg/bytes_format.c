@@ -43,6 +43,7 @@
  * distribute, and otherwise use Python alone or in any derivative version,
  * provided, however, that PSF's License Agreement and PSF's notice of copyright,
  * i.e., "Copyright (c) 2001-2019, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
+ * Portions Copyright (c) 2023-2025 Huawei Technologies Co., Ltd.
  * Python Software Foundation; All Rights Reserved" are retained in Python alone or
  * in any derivative version prepared by Licensee.
  *

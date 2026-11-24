@@ -6,6 +6,7 @@ This module contains symbolic names for all PostgreSQL error codes.
 #
 # Copyright (C) 2006-2019 Johan Dahlin  <jdahlin@async.com.br>
 # Copyright (C) 2020-2021 The Psycopg Team
+# Portions Copyright (c) 2025 Huawei Technologies Co., Ltd.
 #
 # psycopg2 is free software: you can redistribute it and/or modify it
 # under the terms of the GNU Lesser General Public License as published

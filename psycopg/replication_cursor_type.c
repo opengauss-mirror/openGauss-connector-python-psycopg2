@@ -2,6 +2,7 @@
  *
  * Copyright (C) 2015-2019 Daniele Varrazzo <daniele.varrazzo@gmail.com>
  * Copyright (C) 2020-2021 The Psycopg Team
+ * Portions Copyright (c) 2023 Huawei Technologies Co., Ltd.
  *
  * This file is part of psycopg.
  *

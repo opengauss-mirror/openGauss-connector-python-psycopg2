@@ -2,6 +2,7 @@
  *
  * Copyright (C) 2003-2019 Federico Di Gregorio <fog@debian.org>
  * Copyright (C) 2020-2021 The Psycopg Team
+ * Portions Copyright (c) 2023-2025 Huawei Technologies Co., Ltd.
  *
  * This file is part of psycopg.
  *

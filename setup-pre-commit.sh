@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+
 # Install repository pre-commit checks into an isolated local environment.
 set -euo pipefail
 

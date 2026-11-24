@@ -1,6 +1,6 @@
 #!/bin/bash
 #######################################################################
-# Copyright (c): 2020-2025, Huawei Tech. Co., Ltd.
+# Copyright (c) 2020-2025 Huawei Technologies Co., Ltd.
 # descript: Compile and pack python driver for openGauss
 #           Return 0 means OK.
 #           Return 1 means failed.
