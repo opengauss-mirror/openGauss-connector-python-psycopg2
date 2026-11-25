@@ -1,0 +1,27 @@
+project: opengauss/openGauss-connector-python-psycopg2
+version: '1.0'
+directories:
+# Scan the Apache-2.0 OpenSearch-compatible SDK; the repository license stays unchanged.
+# psycopg/ and lib/ are mixed upstream components with openGauss adaptations.
+# Root packaging/build files are outside the declared business source directory.
+- path: ./opensearch_sdk/opensearch_sdk/
+  type: source
+- path: ./opensearch_sdk/opensearch_sdk/tests/
+  type: test
+- path: ./opensearch_sdk/examples/
+  type: examples
+- path: ./psycopg/
+  type: upstream
+- path: ./lib/
+  type: upstream
+- path: ./tests/
+  type: test
+- path: ./doc/
+  type: docs
+- path: ./scripts/
+  type: scripts
+files:
+- path: ./LICENSE
+  type: license
+- path: ./.gitcode/copyright-template.txt
+  type: copyright-template

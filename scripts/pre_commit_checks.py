@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+
 """Run baseline-aware checks only on lines changed from ``HEAD``.
 
 The repository contains legacy files which don't pass a full modern lint run.
